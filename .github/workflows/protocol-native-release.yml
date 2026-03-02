@@ -273,6 +273,24 @@ jobs:
           print(out)
           PY
 
+      - name: Sign release artifacts
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/sign_release_artifacts.sh
+          scripts/sign_release_artifacts.sh dist/release
+
+      - name: Verify release signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/verify_release_signatures.sh
+          scripts/verify_release_signatures.sh dist/release
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -327,6 +345,7 @@ jobs:
               --exclude "*" \
               --include "*.json" \
               --include "*.sha256" \
+              --include "*.asc" \
               --metadata-directive REPLACE \
               --cache-control "max-age=60, must-revalidate"
           done

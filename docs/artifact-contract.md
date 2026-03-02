@@ -18,6 +18,16 @@ Per tarball checksum:
 
 `todero-native-<target>-<version>.tar.gz.sha256`
 
+Per signed artifact, detached signature:
+
+`<artifact>.asc`
+
+Examples:
+
+- `todero-native-linux-x86_64-gnu-0.1.80.tar.gz.asc`
+- `todero-native-linux-x86_64-gnu-0.1.80.tar.gz.sha256.asc`
+- `todero-release-manifest-0.1.80.json.asc`
+
 ## Tarball Content Contract
 
 Each tarball root folder is `<target>/` and must contain:
@@ -53,6 +63,19 @@ Top-level fields:
 - `created_at_utc` (ISO-8601 UTC string)
 - `native_artifacts` (array)
 - `build` (object with workflow/run metadata)
+
+## Signing Contract
+
+The release workflow signs all published alias artifacts:
+
+- `*.tar.gz`
+- `*.sha256`
+- `*.json`
+
+It also publishes exported public keys:
+
+- `todero-native-repo.gpg` (binary)
+- `todero-native-repo.asc` (armored)
 
 Each `native_artifacts[]` item:
 

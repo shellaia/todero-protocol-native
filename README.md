@@ -54,3 +54,18 @@ scripts/sync-from-todero.sh /absolute/path/to/todero/protocol-v3
 
 - Version and tag policy: `docs/versioning-policy.md`
 - Native artifact and manifest contract: `docs/artifact-contract.md`
+
+## Release Workflow Secrets
+
+`protocol-native-release.yml` requires:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_REGION`
+- `S3_BUCKET_APT`
+- `S3_BUCKET_YUM`
+- `S3_BUCKET_BREW`
+- `S3_PREFIX`
+- `GPG_PRIVATE_KEY`
+- `GPG_PASSPHRASE` (optional if key has no passphrase)
+- `GPG_KEY_ID` (optional; auto-detected from imported secret key if omitted)
