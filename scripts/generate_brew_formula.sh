@@ -19,7 +19,7 @@ else
   SHA="$(shasum -a 256 "${archive}" | awk '{print $1}')"
 fi
 
-URL="${BASE_URL%/}/native/todero-native-darwin-aarch64-${VERSION}.tar.gz"
+URL="${BASE_URL%/}/todero-native-darwin-aarch64-${VERSION}.tar.gz"
 
 cat > "${formula}" <<EOF
 class ToderoNative < Formula

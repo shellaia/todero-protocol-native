@@ -251,7 +251,7 @@ jobs:
                       "channel": channel,
                       "target_id": target_id,
                       "artifact_path": a.name,
-                      "publication_path": f"native/{a.name}",
+                      "publication_path": a.name,
                       "sha256": sha,
                   })
 
@@ -351,15 +351,15 @@ jobs:
             exit 1
           fi
 
-          SNAPSHOT_APT="s3://${S3_BUCKET_APT}/${PREFIX}/native/releases/${VERSION}/"
-          ALIAS_APT="s3://${S3_BUCKET_APT}/${PREFIX}/native/"
-          MANIFEST_APT_KEY="${PREFIX}/native/releases/manifest.json"
-          SNAPSHOT_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/native/releases/${VERSION}/"
-          ALIAS_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/native/"
-          MANIFEST_YUM_KEY="${PREFIX}/native/releases/manifest.json"
-          SNAPSHOT_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/native/releases/${VERSION}/"
-          ALIAS_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/native/"
-          MANIFEST_BREW_KEY="${PREFIX}/native/releases/manifest.json"
+          SNAPSHOT_APT="s3://${S3_BUCKET_APT}/${PREFIX}/releases/${VERSION}/"
+          ALIAS_APT="s3://${S3_BUCKET_APT}/${PREFIX}/"
+          MANIFEST_APT_KEY="${PREFIX}/releases/manifest.json"
+          SNAPSHOT_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/releases/${VERSION}/"
+          ALIAS_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/"
+          MANIFEST_YUM_KEY="${PREFIX}/releases/manifest.json"
+          SNAPSHOT_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/releases/${VERSION}/"
+          ALIAS_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/"
+          MANIFEST_BREW_KEY="${PREFIX}/releases/manifest.json"
 
           STAGE_ROOT="$(mktemp -d)"
           trap 'rm -rf "${STAGE_ROOT}"' EXIT

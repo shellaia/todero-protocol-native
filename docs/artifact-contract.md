@@ -96,20 +96,20 @@ Published for brew channel:
 
 The formula URL points to the darwin arm64 archive under alias root:
 
-- `<base>/native/todero-native-darwin-aarch64-<version>.tar.gz`
+- `<base>/todero-native-darwin-aarch64-<version>.tar.gz`
 
 ## Backing Store Publication Paths
 
-Given `S3_PREFIX_NATIVE=<prefix>`:
+Given `S3_PREFIX=<prefix>`:
 
 - Alias root:
-  - `s3://<bucket>/<prefix>/native/`
+  - `s3://<bucket>/<prefix>/`
 - Immutable snapshot root:
-  - `s3://<bucket>/<prefix>/native/releases/<version>/`
+  - `s3://<bucket>/<prefix>/releases/<version>/`
 - Native manifest history index:
-  - `s3://<bucket>/<prefix>/native/releases/manifest.json`
+  - `s3://<bucket>/<prefix>/releases/manifest.json`
 
 Downstream consumers are expected to fetch artifacts from alias root path:
 
-- `<prefix>/native/todero-native-<target>-<version>.tar.gz`
-- `<prefix>/native/todero-release-manifest-<version>.json`
+- `<prefix>/todero-native-<target>-<version>.tar.gz`
+- `<prefix>/todero-release-manifest-<version>.json`

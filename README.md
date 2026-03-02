@@ -60,7 +60,7 @@ scripts/sync-from-todero.sh /absolute/path/to/todero/protocol-v3
 After a release is published:
 
 ```bash
-brew install --formula "https://<brew-domain>/<S3_PREFIX>/native/todero-native.rb"
+brew install --formula "https://<brew-domain>/<S3_PREFIX>/todero-native.rb"
 ```
 
 ## Release Workflow Secrets
