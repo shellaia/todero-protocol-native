@@ -66,6 +66,9 @@ scripts/sync-from-todero.sh /absolute/path/to/todero/protocol-v3
 - `S3_BUCKET_YUM`
 - `S3_BUCKET_BREW`
 - `S3_PREFIX`
-- `GPG_PRIVATE_KEY`
-- `GPG_PASSPHRASE` (optional if key has no passphrase)
-- `GPG_KEY_ID` (optional; auto-detected from imported secret key if omitted)
+- `APT_GPG_PRIVATE_KEY`
+- `APT_GPG_PASSPHRASE` (optional if key has no passphrase)
+- `APT_GPG_KEY_ID` (optional; auto-detected if omitted)
+- `YUM_GPG_PRIVATE_KEY`
+- `YUM_GPG_PASSPHRASE` (optional if key has no passphrase)
+- `YUM_GPG_KEY_ID` (optional; auto-detected if omitted)

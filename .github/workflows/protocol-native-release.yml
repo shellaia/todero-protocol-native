@@ -273,23 +273,41 @@ jobs:
           print(out)
           PY
 
-      - name: Sign release artifacts
+      - name: Sign release artifacts (APT key)
         shell: bash
         env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
         run: |
           set -euo pipefail
           chmod +x scripts/sign_release_artifacts.sh
-          scripts/sign_release_artifacts.sh dist/release
+          scripts/sign_release_artifacts.sh dist/release ".apt.asc" "todero-native-repo-apt"
 
-      - name: Verify release signatures
+      - name: Sign release artifacts (YUM key)
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.YUM_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.YUM_GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.YUM_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/sign_release_artifacts.sh
+          scripts/sign_release_artifacts.sh dist/release ".yum.asc" "todero-native-repo-yum"
+
+      - name: Verify release signatures (APT key)
         shell: bash
         run: |
           set -euo pipefail
           chmod +x scripts/verify_release_signatures.sh
-          scripts/verify_release_signatures.sh dist/release
+          scripts/verify_release_signatures.sh dist/release ".apt.asc" dist/release/todero-native-repo-apt.asc
+
+      - name: Verify release signatures (YUM key)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/verify_release_signatures.sh
+          scripts/verify_release_signatures.sh dist/release ".yum.asc" dist/release/todero-native-repo-yum.asc
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -345,7 +363,12 @@ jobs:
               --exclude "*" \
               --include "*.json" \
               --include "*.sha256" \
-              --include "*.asc" \
+              --include "*.apt.asc" \
+              --include "*.yum.asc" \
+              --include "todero-native-repo-apt.gpg" \
+              --include "todero-native-repo-apt.asc" \
+              --include "todero-native-repo-yum.gpg" \
+              --include "todero-native-repo-yum.asc" \
               --metadata-directive REPLACE \
               --cache-control "max-age=60, must-revalidate"
           done

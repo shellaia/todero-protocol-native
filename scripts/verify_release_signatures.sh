@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ART_DIR="${1:-dist/release}"
+SIG_SUFFIX="${2:-.asc}"
+PUB_ASC="${3:-${ART_DIR}/todero-native-repo.asc}"
 
 if [[ ! -d "${ART_DIR}" ]]; then
   echo "artifact directory not found: ${ART_DIR}" >&2
@@ -13,7 +15,6 @@ if ! command -v gpg >/dev/null 2>&1; then
   exit 1
 fi
 
-PUB_ASC="${ART_DIR}/todero-native-repo.asc"
 if [[ ! -f "${PUB_ASC}" ]]; then
   echo "missing exported public key: ${PUB_ASC}" >&2
   exit 1
@@ -38,7 +39,7 @@ if [[ "${#targets[@]}" -eq 0 ]]; then
 fi
 
 for f in "${targets[@]}"; do
-  sig="${f}.asc"
+  sig="${f}${SIG_SUFFIX}"
   if [[ ! -f "${sig}" ]]; then
     echo "missing signature file: ${sig}" >&2
     exit 1

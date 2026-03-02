@@ -20,13 +20,14 @@ Per tarball checksum:
 
 Per signed artifact, detached signature:
 
-`<artifact>.asc`
+- `APT` key signature: `<artifact>.apt.asc`
+- `YUM` key signature: `<artifact>.yum.asc`
 
 Examples:
 
-- `todero-native-linux-x86_64-gnu-0.1.80.tar.gz.asc`
-- `todero-native-linux-x86_64-gnu-0.1.80.tar.gz.sha256.asc`
-- `todero-release-manifest-0.1.80.json.asc`
+- `todero-native-linux-x86_64-gnu-0.1.80.tar.gz.apt.asc`
+- `todero-native-linux-x86_64-gnu-0.1.80.tar.gz.yum.asc`
+- `todero-release-manifest-0.1.80.json.apt.asc`
 
 ## Tarball Content Contract
 
@@ -74,8 +75,8 @@ The release workflow signs all published alias artifacts:
 
 It also publishes exported public keys:
 
-- `todero-native-repo.gpg` (binary)
-- `todero-native-repo.asc` (armored)
+- `todero-native-repo-apt.gpg` / `todero-native-repo-apt.asc`
+- `todero-native-repo-yum.gpg` / `todero-native-repo-yum.asc`
 
 Each `native_artifacts[]` item:
 

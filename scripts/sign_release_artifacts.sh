@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ART_DIR="${1:-dist/release}"
+SIG_SUFFIX="${2:-.asc}"
+KEY_BASENAME="${3:-todero-native-repo}"
 
 if [[ ! -d "${ART_DIR}" ]]; then
   echo "artifact directory not found: ${ART_DIR}" >&2
@@ -50,8 +52,8 @@ if [[ -z "${KEY_ID}" ]]; then
   exit 1
 fi
 
-gpg --batch --yes --export "${KEY_ID}" > "${ART_DIR}/todero-native-repo.gpg"
-gpg --batch --yes --armor --export "${KEY_ID}" > "${ART_DIR}/todero-native-repo.asc"
+gpg --batch --yes --export "${KEY_ID}" > "${ART_DIR}/${KEY_BASENAME}.gpg"
+gpg --batch --yes --armor --export "${KEY_ID}" > "${ART_DIR}/${KEY_BASENAME}.asc"
 
 shopt -s nullglob
 targets=(
@@ -66,7 +68,7 @@ if [[ "${#targets[@]}" -eq 0 ]]; then
 fi
 
 for f in "${targets[@]}"; do
-  sig="${f}.asc"
+  sig="${f}${SIG_SUFFIX}"
   if [[ -n "${GPG_PASSPHRASE:-}" ]]; then
     gpg --batch --yes --pinentry-mode loopback \
       --passphrase "${GPG_PASSPHRASE}" \
