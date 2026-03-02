@@ -1,0 +1,399 @@
+name: Protocol Native Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional tag to publish to (for example: v1.2.3). If empty, artifacts are built only.'
+        required: false
+        type: string
+      publish_debug_mirror:
+        description: 'If true, also publish artifacts to GitHub Release as debug mirror.'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: protocol-native-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build_native:
+    name: Build native ${{ matrix.target_id }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target_id: linux-x86_64-gnu
+            runner: ubuntu-latest
+            lib_name: libv3_ffi.so
+            os_family: linux
+            arch: x86_64
+            target_triple: x86_64-unknown-linux-gnu
+          - target_id: linux-aarch64-gnu
+            runner: ubuntu-24.04-arm
+            lib_name: libv3_ffi.so
+            os_family: linux
+            arch: aarch64
+            target_triple: aarch64-unknown-linux-gnu
+          - target_id: darwin-aarch64
+            runner: macos-14
+            lib_name: libv3_ffi.dylib
+            os_family: darwin
+            arch: aarch64
+            target_triple: aarch64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=""
+          VERSION=""
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG#v}"
+          elif [[ -n "${{ inputs.release_tag }}" ]]; then
+            TAG="${{ inputs.release_tag }}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install openssl@3 pkg-config
+
+      - name: Build v3-ffi release library
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build -p v3-ffi --release
+
+      - name: Native smoke check
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIB_PATH="target/release/${{ matrix.lib_name }}"
+          test -s "${LIB_PATH}"
+          file "${LIB_PATH}"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            nm -gU "${LIB_PATH}" | grep -q "v3_ffi_abi_version"
+          else
+            nm -D "${LIB_PATH}" | grep -q "v3_ffi_abi_version" || nm -g "${LIB_PATH}" | grep -q "v3_ffi_abi_version"
+          fi
+
+      - name: Package native artifact
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          TARGET_ID="${{ matrix.target_id }}"
+          LIB_NAME="${{ matrix.lib_name }}"
+          LIB_PATH="target/release/${LIB_NAME}"
+
+          OUT_DIR="dist/native"
+          PAYLOAD_DIR="${OUT_DIR}/${TARGET_ID}"
+          ARCHIVE="todero-native-${TARGET_ID}-${VERSION}.tar.gz"
+
+          mkdir -p "${PAYLOAD_DIR}"
+          cp "${LIB_PATH}" "${PAYLOAD_DIR}/${LIB_NAME}"
+
+          cat > "${PAYLOAD_DIR}/metadata.json" <<META
+          {
+            "name": "todero-native",
+            "version": "${VERSION}",
+            "target_id": "${{ matrix.target_id }}",
+            "target_triple": "${{ matrix.target_triple }}",
+            "os": "${{ matrix.os_family }}",
+            "arch": "${{ matrix.arch }}",
+            "library": "${LIB_NAME}"
+          }
+          META
+
+          tar -C "${OUT_DIR}" -czf "${OUT_DIR}/${ARCHIVE}" "${TARGET_ID}"
+
+          python3 - <<PY
+          import hashlib
+          from pathlib import Path
+          archive = Path("${OUT_DIR}/${ARCHIVE}")
+          sha = hashlib.sha256(archive.read_bytes()).hexdigest()
+          Path(f"${OUT_DIR}/${ARCHIVE}.sha256").write_text(f"{sha}  {archive.name}\\n", encoding="utf-8")
+          PY
+
+          echo "archive=${OUT_DIR}/${ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "checksum=${OUT_DIR}/${ARCHIVE}.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload target artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target_id }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.checksum }}
+          if-no-files-found: error
+
+  publish_and_gate:
+    name: Publish and gate Tier-1 coverage
+    runs-on: ubuntu-latest
+    needs: build_native
+
+    steps:
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=""
+          VERSION=""
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG#v}"
+          elif [[ -n "${{ inputs.release_tag }}" ]]; then
+            TAG="${{ inputs.release_tag }}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: dist/release
+
+      - name: Gate Tier-1 artifacts present
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          expected=(
+            "linux-x86_64-gnu"
+            "linux-aarch64-gnu"
+            "darwin-aarch64"
+          )
+          for t in "${expected[@]}"; do
+            archives=(dist/release/todero-native-"${t}"-*.tar.gz)
+            checksums=(dist/release/todero-native-"${t}"-*.tar.gz.sha256)
+            if [[ ${#archives[@]} -lt 1 ]]; then
+              echo "Missing native archive for target ${t}" >&2
+              exit 1
+            fi
+            if [[ ${#checksums[@]} -lt 1 ]]; then
+              echo "Missing checksum for target ${t}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Build release manifest
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          release_dir = Path("dist/release")
+          archives = sorted(release_dir.glob("todero-native-*.tar.gz"))
+          if not archives:
+              raise SystemExit("No native archives found")
+
+          version = os.environ.get("VERSION", "").strip()
+          if not version:
+              raise SystemExit("Missing VERSION in environment")
+
+          entries = []
+          suffix = f"-{version}.tar.gz"
+          for a in archives:
+              name = a.name
+              if not name.startswith("todero-native-") or not name.endswith(suffix):
+                  raise SystemExit(f"Archive name does not match resolved version {version}: {name}")
+              target_id = name.removeprefix("todero-native-").removesuffix(suffix)
+              if not target_id:
+                  raise SystemExit(f"Unable to resolve target_id from archive: {name}")
+              sha_file = a.with_suffix(a.suffix + ".sha256")
+              sha = sha_file.read_text(encoding="utf-8").split()[0]
+              for channel in ("apt", "yum", "brew"):
+                  entries.append({
+                      "name": "todero-native",
+                      "channel": channel,
+                      "target_id": target_id,
+                      "artifact_path": a.name,
+                      "publication_path": f"native/{a.name}",
+                      "sha256": sha,
+                  })
+
+          manifest = {
+              "version": version,
+              "release_tag": "${{ github.ref_name }}" if "${{ github.ref }}".startswith("refs/tags/") else "",
+              "created_at_utc": datetime.now(timezone.utc).isoformat(),
+              "native_artifacts": entries,
+              "build": {
+                  "workflow": "${{ github.workflow }}",
+                  "run_id": "${{ github.run_id }}",
+                  "run_number": "${{ github.run_number }}",
+                  "sha": "${{ github.sha }}",
+              },
+          }
+
+          out = release_dir / f"todero-release-manifest-{version}.json"
+          out.write_text(json.dumps(manifest, indent=2) + "\\n", encoding="utf-8")
+          print(out)
+          PY
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Publish native artifacts to channel backing stores
+        shell: bash
+        env:
+          S3_BUCKET_APT: ${{ secrets.S3_BUCKET_APT }}
+          S3_BUCKET_YUM: ${{ secrets.S3_BUCKET_YUM }}
+          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
+          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          CLOUDFRONT_DISTRIBUTION_ID_APT: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID_APT }}
+          CLOUDFRONT_DISTRIBUTION_ID_YUM: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID_YUM }}
+          CLOUDFRONT_DISTRIBUTION_ID_BREW: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID_BREW }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          for b in S3_BUCKET_APT S3_BUCKET_YUM S3_BUCKET_BREW S3_PREFIX CLOUDFRONT_DISTRIBUTION_ID_APT CLOUDFRONT_DISTRIBUTION_ID_YUM CLOUDFRONT_DISTRIBUTION_ID_BREW; do
+            if [[ -z "${!b:-}" ]]; then
+              echo "Missing required env var: ${b}" >&2
+              exit 1
+            fi
+          done
+          PREFIX="${S3_PREFIX%/}"
+          if [[ -z "${VERSION}" ]]; then
+            echo "Missing resolved version for native publish." >&2
+            exit 1
+          fi
+
+          SNAPSHOT_APT="s3://${S3_BUCKET_APT}/${PREFIX}/native/releases/${VERSION}/"
+          ALIAS_APT="s3://${S3_BUCKET_APT}/${PREFIX}/native/"
+          MANIFEST_APT_KEY="${PREFIX}/native/releases/manifest.json"
+          SNAPSHOT_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/native/releases/${VERSION}/"
+          ALIAS_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/native/"
+          MANIFEST_YUM_KEY="${PREFIX}/native/releases/manifest.json"
+          SNAPSHOT_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/native/releases/${VERSION}/"
+          ALIAS_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/native/"
+          MANIFEST_BREW_KEY="${PREFIX}/native/releases/manifest.json"
+
+          # Immutable snapshots + alias update.
+          aws s3 cp dist/release/ "${SNAPSHOT_APT}" --recursive
+          aws s3 cp dist/release/ "${ALIAS_APT}" --recursive
+          aws s3 cp dist/release/ "${SNAPSHOT_YUM}" --recursive
+          aws s3 cp dist/release/ "${ALIAS_YUM}" --recursive
+          aws s3 cp dist/release/ "${SNAPSHOT_BREW}" --recursive
+          aws s3 cp dist/release/ "${ALIAS_BREW}" --recursive
+
+          update_native_manifest() {
+            local bucket="$1"
+            local key="$2"
+            local snapshot="$3"
+            local alias="$4"
+            local tmp_dir
+            local in_file
+            local out_file
+            local published_at
+
+            tmp_dir="$(mktemp -d)"
+            in_file="${tmp_dir}/manifest.json"
+            out_file="${tmp_dir}/manifest.updated.json"
+            published_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+            if ! aws s3 cp "s3://${bucket}/${key}" "${in_file}" >/dev/null 2>&1; then
+              printf '{"schema":1,"project":"todero-native","channel":"native","releases":[]}\n' > "${in_file}"
+            fi
+
+            helper="${GITHUB_WORKSPACE}/scripts/update_native_manifest.py"
+            if [[ -f "${helper}" ]]; then
+              python3 "${helper}" \
+                "${in_file}" \
+                "${out_file}" \
+                "${VERSION}" \
+                "${published_at}" \
+                "${snapshot}" \
+                "${alias}"
+            else
+              echo "Missing helper script: ${helper}" >&2
+              ls -la "${GITHUB_WORKSPACE}/scripts" >&2 || true
+              exit 1
+            fi
+
+            aws s3 cp "${out_file}" "s3://${bucket}/${key}"
+            rm -rf "${tmp_dir}"
+          }
+
+          update_native_manifest "${S3_BUCKET_APT}" "${MANIFEST_APT_KEY}" "${SNAPSHOT_APT}" "${ALIAS_APT}"
+          update_native_manifest "${S3_BUCKET_YUM}" "${MANIFEST_YUM_KEY}" "${SNAPSHOT_YUM}" "${ALIAS_YUM}"
+          update_native_manifest "${S3_BUCKET_BREW}" "${MANIFEST_BREW_KEY}" "${SNAPSHOT_BREW}" "${ALIAS_BREW}"
+
+          inv_apt="$(aws cloudfront create-invalidation \
+            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_APT}" \
+            --paths "/${PREFIX}/native/*" \
+            --query 'Invalidation.Id' --output text)"
+          inv_yum="$(aws cloudfront create-invalidation \
+            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_YUM}" \
+            --paths "/${PREFIX}/native/*" \
+            --query 'Invalidation.Id' --output text)"
+          inv_brew="$(aws cloudfront create-invalidation \
+            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_BREW}" \
+            --paths "/${PREFIX}/native/*" \
+            --query 'Invalidation.Id' --output text)"
+
+          aws cloudfront wait invalidation-completed --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_APT}" --id "${inv_apt}"
+          aws cloudfront wait invalidation-completed --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_YUM}" --id "${inv_yum}"
+          aws cloudfront wait invalidation-completed --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_BREW}" --id "${inv_brew}"
+
+      - name: Upload consolidated native artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-release-bundle
+          path: dist/release/*
+          if-no-files-found: error
+
+      - name: Publish GitHub release assets (debug mirror only)
+        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'workflow_dispatch' && inputs.publish_debug_mirror == true
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/release/*.tar.gz
+            dist/release/*.sha256
+            dist/release/todero-release-manifest-*.json
