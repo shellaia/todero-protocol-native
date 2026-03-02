@@ -373,19 +373,11 @@ jobs:
           build_channel_manifest() {
             local channel="$1"
             local out_dir="$2"
-            python3 - "${channel}" "${VERSION}" "${out_dir}" <<'PY'
-            import json, sys
-            from pathlib import Path
-            channel, version, out_dir = sys.argv[1:]
-            src = Path("dist/release") / f"todero-release-manifest-{version}.json"
-            dst = Path(out_dir) / src.name
-            data = json.loads(src.read_text(encoding="utf-8"))
-            entries = data.get("native_artifacts", [])
-            if not isinstance(entries, list):
-                entries = []
-            data["native_artifacts"] = [e for e in entries if isinstance(e, dict) and e.get("channel") == channel]
-            dst.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-            PY
+            python3 scripts/filter_channel_manifest.py \
+              "dist/release/todero-release-manifest-${VERSION}.json" \
+              "${out_dir}/todero-release-manifest-${VERSION}.json" \
+              "${channel}" \
+              "${VERSION}"
           }
           build_channel_manifest "apt" "${STAGE_APT}"
           build_channel_manifest "yum" "${STAGE_YUM}"
