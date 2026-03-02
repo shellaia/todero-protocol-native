@@ -6,6 +6,30 @@ import sys
 from pathlib import Path
 
 
+def _load_json_tolerant(text: str):
+    """Load JSON, tolerating accidental concatenated JSON documents."""
+    decoder = json.JSONDecoder()
+    idx = 0
+    objs = []
+    n = len(text)
+    while idx < n:
+        while idx < n and text[idx].isspace():
+            idx += 1
+        if idx >= n:
+            break
+        obj, end = decoder.raw_decode(text, idx)
+        objs.append(obj)
+        idx = end
+    if not objs:
+        raise ValueError("no JSON object found")
+    if len(objs) > 1:
+        print(
+            f"warning: found {len(objs)} concatenated JSON objects, using last",
+            file=sys.stderr,
+        )
+    return objs[-1]
+
+
 def main() -> int:
     if len(sys.argv) != 5:
         raise SystemExit(
@@ -19,7 +43,7 @@ def main() -> int:
     if not src.is_file():
         raise SystemExit(f"input manifest not found: {src}")
 
-    data = json.loads(src.read_text(encoding="utf-8"))
+    data = _load_json_tolerant(src.read_text(encoding="utf-8"))
     entries = data.get("native_artifacts", [])
     if not isinstance(entries, list):
         entries = []
