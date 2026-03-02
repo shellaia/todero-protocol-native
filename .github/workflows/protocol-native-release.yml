@@ -287,13 +287,10 @@ jobs:
           S3_BUCKET_YUM: ${{ secrets.S3_BUCKET_YUM }}
           S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
           S3_PREFIX: ${{ secrets.S3_PREFIX }}
-          CLOUDFRONT_DISTRIBUTION_ID_APT: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID_APT }}
-          CLOUDFRONT_DISTRIBUTION_ID_YUM: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID_YUM }}
-          CLOUDFRONT_DISTRIBUTION_ID_BREW: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID_BREW }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          for b in S3_BUCKET_APT S3_BUCKET_YUM S3_BUCKET_BREW S3_PREFIX CLOUDFRONT_DISTRIBUTION_ID_APT CLOUDFRONT_DISTRIBUTION_ID_YUM CLOUDFRONT_DISTRIBUTION_ID_BREW; do
+          for b in S3_BUCKET_APT S3_BUCKET_YUM S3_BUCKET_BREW S3_PREFIX; do
             if [[ -z "${!b:-}" ]]; then
               echo "Missing required env var: ${b}" >&2
               exit 1
@@ -322,6 +319,17 @@ jobs:
           aws s3 cp dist/release/ "${ALIAS_YUM}" --recursive
           aws s3 cp dist/release/ "${SNAPSHOT_BREW}" --recursive
           aws s3 cp dist/release/ "${ALIAS_BREW}" --recursive
+
+          # Mutable alias metadata/checksums: short TTL to avoid explicit invalidations.
+          for alias in "${ALIAS_APT}" "${ALIAS_YUM}" "${ALIAS_BREW}"; do
+            aws s3 cp dist/release/ "${alias}" \
+              --recursive \
+              --exclude "*" \
+              --include "*.json" \
+              --include "*.sha256" \
+              --metadata-directive REPLACE \
+              --cache-control "max-age=60, must-revalidate"
+          done
 
           update_native_manifest() {
             local bucket="$1"
@@ -357,30 +365,15 @@ jobs:
               exit 1
             fi
 
-            aws s3 cp "${out_file}" "s3://${bucket}/${key}"
+            aws s3 cp "${out_file}" "s3://${bucket}/${key}" \
+              --metadata-directive REPLACE \
+              --cache-control "max-age=60, must-revalidate"
             rm -rf "${tmp_dir}"
           }
 
           update_native_manifest "${S3_BUCKET_APT}" "${MANIFEST_APT_KEY}" "${SNAPSHOT_APT}" "${ALIAS_APT}"
           update_native_manifest "${S3_BUCKET_YUM}" "${MANIFEST_YUM_KEY}" "${SNAPSHOT_YUM}" "${ALIAS_YUM}"
           update_native_manifest "${S3_BUCKET_BREW}" "${MANIFEST_BREW_KEY}" "${SNAPSHOT_BREW}" "${ALIAS_BREW}"
-
-          inv_apt="$(aws cloudfront create-invalidation \
-            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_APT}" \
-            --paths "/${PREFIX}/native/*" \
-            --query 'Invalidation.Id' --output text)"
-          inv_yum="$(aws cloudfront create-invalidation \
-            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_YUM}" \
-            --paths "/${PREFIX}/native/*" \
-            --query 'Invalidation.Id' --output text)"
-          inv_brew="$(aws cloudfront create-invalidation \
-            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_BREW}" \
-            --paths "/${PREFIX}/native/*" \
-            --query 'Invalidation.Id' --output text)"
-
-          aws cloudfront wait invalidation-completed --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_APT}" --id "${inv_apt}"
-          aws cloudfront wait invalidation-completed --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_YUM}" --id "${inv_yum}"
-          aws cloudfront wait invalidation-completed --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID_BREW}" --id "${inv_brew}"
 
       - name: Upload consolidated native artifacts
         uses: actions/upload-artifact@v4
