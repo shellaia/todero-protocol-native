@@ -1,0 +1,21 @@
+[package]
+name = "v3-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+base64 = "0.22"
+jni = "0.21"
+serde_json = "1"
+v3-core = { path = "../v3-core" }
+v3-store = { path = "../v3-store" }
+v3-client-runtime = { path = "../v3-client-runtime" }
+v3-server-runtime = { path = "../v3-server-runtime" }
+v3-wire = { path = "../v3-wire" }
+v3-crypto = { path = "../v3-crypto", features = ["openssl-backend"] }
+v3-nat = { path = "../v3-nat" }
+
+[lib]
+crate-type = ["cdylib", "rlib"]

@@ -1,0 +1,13 @@
+[package]
+name = "v3-client-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+v3-core = { path = "../v3-core" }
+v3-wire = { path = "../v3-wire" }
+v3-nat = { path = "../v3-nat", features = ["ice", "turn"] }
+serde_json = "1"

@@ -1,0 +1,25 @@
+[workspace]
+members = [
+  "v3-core",
+  "v3-wire",
+  "v3-store",
+  "v3-server-runtime",
+  "v3-client-runtime",
+  "v3-transport-udp",
+  "v3-crypto",
+  "v3-nat",
+  "v3-ffi",
+  "v3-orchestrator-api",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+version = "0.1.0"
+authors = ["Todero V3 Team"]
+
+[workspace.dependencies]
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+bytes = "1"

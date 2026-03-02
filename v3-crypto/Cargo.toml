@@ -1,0 +1,18 @@
+[package]
+name = "v3-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+hmac = "0.12"
+sha2 = "0.10"
+openssl = { version = "0.10", optional = true, features = ["vendored"] }
+
+[features]
+dtls-backend = []
+openssl-backend = ["dtls-backend", "dep:openssl"]
+default = []
