@@ -55,6 +55,14 @@ scripts/sync-from-todero.sh /absolute/path/to/todero/protocol-v3
 - Version and tag policy: `docs/versioning-policy.md`
 - Native artifact and manifest contract: `docs/artifact-contract.md`
 
+## Brew Install (Direct Formula URL)
+
+After a release is published:
+
+```bash
+brew install --formula "https://<brew-domain>/<S3_PREFIX>/native/todero-native.rb"
+```
+
 ## Release Workflow Secrets
 
 `protocol-native-release.yml` requires:

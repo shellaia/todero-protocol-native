@@ -60,6 +60,7 @@ targets=(
   "${ART_DIR}"/*.tar.gz
   "${ART_DIR}"/*.sha256
   "${ART_DIR}"/*.json
+  "${ART_DIR}"/*.rb
 )
 
 if [[ "${#targets[@]}" -eq 0 ]]; then

@@ -273,6 +273,19 @@ jobs:
           print(out)
           PY
 
+      - name: Generate brew formula
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
+          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/generate_brew_formula.sh
+          base_url="https://${S3_BUCKET_BREW}.s3.${AWS_REGION}.amazonaws.com/${S3_PREFIX%/}"
+          scripts/generate_brew_formula.sh "${VERSION}" "${base_url}" "dist/release"
+
       - name: Sign release artifacts (APT key)
         shell: bash
         env:
@@ -360,6 +373,9 @@ jobs:
           find dist/release -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec cp {} "${STAGE_YUM}/" \;
           find dist/release -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec cp {} "${STAGE_BREW}/" \;
 
+          # Brew-specific formula.
+          cp dist/release/todero-native.rb "${STAGE_BREW}/"
+
           # Channel-keyed signatures/public keys.
           find dist/release -maxdepth 1 -type f -name '*.apt.asc' -exec cp {} "${STAGE_APT}/" \;
           cp dist/release/todero-native-repo-apt.gpg "${STAGE_APT}/"
@@ -417,6 +433,7 @@ jobs:
               --exclude "*" \
               --include "*.json" \
               --include "*.sha256" \
+              --include "*.rb" \
               --metadata-directive REPLACE \
               --cache-control "max-age=60, must-revalidate"
 

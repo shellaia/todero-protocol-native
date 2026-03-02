@@ -28,6 +28,7 @@ Examples:
 - `todero-native-linux-x86_64-gnu-0.1.80.tar.gz.apt.asc`
 - `todero-native-linux-x86_64-gnu-0.1.80.tar.gz.yum.asc`
 - `todero-release-manifest-0.1.80.json.apt.asc`
+- `todero-native.rb.apt.asc`
 
 ## Tarball Content Contract
 
@@ -86,6 +87,16 @@ Each `native_artifacts[]` item:
 - `artifact_path`: tarball file name
 - `publication_path`: path under channel alias root
 - `sha256`: artifact SHA-256 hex digest
+
+## Brew Formula Contract
+
+Published for brew channel:
+
+- `todero-native.rb`
+
+The formula URL points to the darwin arm64 archive under alias root:
+
+- `<base>/native/todero-native-darwin-aarch64-<version>.tar.gz`
 
 ## Backing Store Publication Paths
 
