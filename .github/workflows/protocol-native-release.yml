@@ -348,30 +348,85 @@ jobs:
           ALIAS_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/native/"
           MANIFEST_BREW_KEY="${PREFIX}/native/releases/manifest.json"
 
-          # Immutable snapshots + alias update.
-          aws s3 cp dist/release/ "${SNAPSHOT_APT}" --recursive
-          aws s3 cp dist/release/ "${ALIAS_APT}" --recursive
-          aws s3 cp dist/release/ "${SNAPSHOT_YUM}" --recursive
-          aws s3 cp dist/release/ "${ALIAS_YUM}" --recursive
-          aws s3 cp dist/release/ "${SNAPSHOT_BREW}" --recursive
-          aws s3 cp dist/release/ "${ALIAS_BREW}" --recursive
+          STAGE_ROOT="$(mktemp -d)"
+          trap 'rm -rf "${STAGE_ROOT}"' EXIT
+          STAGE_APT="${STAGE_ROOT}/apt"
+          STAGE_YUM="${STAGE_ROOT}/yum"
+          STAGE_BREW="${STAGE_ROOT}/brew"
+          mkdir -p "${STAGE_APT}" "${STAGE_YUM}" "${STAGE_BREW}"
+
+          # Common artifacts copied to all channels.
+          find dist/release -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec cp {} "${STAGE_APT}/" \;
+          find dist/release -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec cp {} "${STAGE_YUM}/" \;
+          find dist/release -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec cp {} "${STAGE_BREW}/" \;
+
+          # Channel-keyed signatures/public keys.
+          find dist/release -maxdepth 1 -type f -name '*.apt.asc' -exec cp {} "${STAGE_APT}/" \;
+          cp dist/release/todero-native-repo-apt.gpg "${STAGE_APT}/"
+          cp dist/release/todero-native-repo-apt.asc "${STAGE_APT}/"
+
+          find dist/release -maxdepth 1 -type f -name '*.yum.asc' -exec cp {} "${STAGE_YUM}/" \;
+          cp dist/release/todero-native-repo-yum.gpg "${STAGE_YUM}/"
+          cp dist/release/todero-native-repo-yum.asc "${STAGE_YUM}/"
+
+          # Build per-channel manifest with only that channel's entries.
+          build_channel_manifest() {
+            local channel="$1"
+            local out_dir="$2"
+            python3 - "${channel}" "${VERSION}" "${out_dir}" <<'PY'
+            import json, sys
+            from pathlib import Path
+            channel, version, out_dir = sys.argv[1:]
+            src = Path("dist/release") / f"todero-release-manifest-{version}.json"
+            dst = Path(out_dir) / src.name
+            data = json.loads(src.read_text(encoding="utf-8"))
+            entries = data.get("native_artifacts", [])
+            if not isinstance(entries, list):
+                entries = []
+            data["native_artifacts"] = [e for e in entries if isinstance(e, dict) and e.get("channel") == channel]
+            dst.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            PY
+          }
+          build_channel_manifest "apt" "${STAGE_APT}"
+          build_channel_manifest "yum" "${STAGE_YUM}"
+          build_channel_manifest "brew" "${STAGE_BREW}"
+
+          # Immutable snapshots + alias update (per-channel payload only).
+          aws s3 cp "${STAGE_APT}/" "${SNAPSHOT_APT}" --recursive
+          aws s3 cp "${STAGE_APT}/" "${ALIAS_APT}" --recursive
+          aws s3 cp "${STAGE_YUM}/" "${SNAPSHOT_YUM}" --recursive
+          aws s3 cp "${STAGE_YUM}/" "${ALIAS_YUM}" --recursive
+          aws s3 cp "${STAGE_BREW}/" "${SNAPSHOT_BREW}" --recursive
+          aws s3 cp "${STAGE_BREW}/" "${ALIAS_BREW}" --recursive
 
           # Mutable alias metadata/checksums: short TTL to avoid explicit invalidations.
-          for alias in "${ALIAS_APT}" "${ALIAS_YUM}" "${ALIAS_BREW}"; do
-            aws s3 cp dist/release/ "${alias}" \
+          aws s3 cp "${STAGE_APT}/" "${ALIAS_APT}" \
               --recursive \
               --exclude "*" \
               --include "*.json" \
               --include "*.sha256" \
               --include "*.apt.asc" \
-              --include "*.yum.asc" \
               --include "todero-native-repo-apt.gpg" \
               --include "todero-native-repo-apt.asc" \
+              --metadata-directive REPLACE \
+              --cache-control "max-age=60, must-revalidate"
+          aws s3 cp "${STAGE_YUM}/" "${ALIAS_YUM}" \
+              --recursive \
+              --exclude "*" \
+              --include "*.json" \
+              --include "*.sha256" \
+              --include "*.yum.asc" \
               --include "todero-native-repo-yum.gpg" \
               --include "todero-native-repo-yum.asc" \
               --metadata-directive REPLACE \
               --cache-control "max-age=60, must-revalidate"
-          done
+          aws s3 cp "${STAGE_BREW}/" "${ALIAS_BREW}" \
+              --recursive \
+              --exclude "*" \
+              --include "*.json" \
+              --include "*.sha256" \
+              --metadata-directive REPLACE \
+              --cache-control "max-age=60, must-revalidate"
 
           update_native_manifest() {
             local bucket="$1"
