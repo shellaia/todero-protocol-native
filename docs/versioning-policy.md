@@ -18,6 +18,13 @@
 - The release tag version (`vX.Y.Z`) must match workspace version (`X.Y.Z`) for a release cut.
 - CI/release automation should fail if tag and workspace version diverge.
 
+## Automated Patch Release Cut
+
+- Use `scripts/release/publish-release` to cut patch releases.
+- Script enforces `main` branch and clean worktree.
+- Script updates `version.txt`, commits/pushes it, then creates/pushes `vX.Y.Z`.
+- Script only increments patch (`z`) and never changes major/minor.
+
 ## Pre-release Builds
 
 - Pre-release builds for validation can use non-tag runs.

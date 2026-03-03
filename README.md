@@ -55,6 +55,21 @@ scripts/sync-from-todero.sh /absolute/path/to/todero/protocol-v3
 - Version and tag policy: `docs/versioning-policy.md`
 - Native artifact and manifest contract: `docs/artifact-contract.md`
 
+## Release Automation (Patch)
+
+Use the release helper to cut patch releases (`X.Y.Z -> X.Y.(Z+1)`):
+
+```bash
+scripts/release/publish-release --dry-run
+scripts/release/publish-release
+```
+
+Rules:
+- Must run from `main` (script verifies and fails otherwise).
+- Uses `version.txt` as source of truth.
+- Commits/pushes `version.txt` first, then creates/pushes `vX.Y.Z` tag.
+- Major/minor bumps are manual changes to `version.txt` outside this script.
+
 ## Brew Install (Direct Formula URL)
 
 After a release is published:

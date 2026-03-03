@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STEP="init"
+
+fail() {
+  echo "publish-release aborted (${STEP}): $*" >&2
+  exit 1
+}
+
+on_err() {
+  local exit_code=$?
+  fail "unexpected error (exit=${exit_code})"
+}
+trap on_err ERR
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  scripts/release/publish-release [--dry-run]
+
+Behavior:
+  - runs only from branch: main
+  - bumps patch version only (X.Y.Z -> X.Y.Z+1)
+  - commits + pushes version.txt first
+  - creates + pushes tag vX.Y.Z after commit push
+USAGE
+}
+
+DRY_RUN=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown argument: $1"
+      ;;
+  esac
+  shift
+done
+
+STEP="repository-check"
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "not inside a git repository"
+
+STEP="branch-check"
+current_branch="$(git rev-parse --abbrev-ref HEAD)"
+[[ "${current_branch}" == "main" ]] || fail "current branch is '${current_branch}', expected 'main'"
+
+STEP="worktree-check"
+git diff --quiet || fail "working tree has unstaged changes"
+git diff --cached --quiet || fail "working tree has staged changes"
+[[ -z "$(git ls-files --others --exclude-standard)" ]] || fail "working tree has untracked files"
+
+STEP="version-read"
+[[ -f "version.txt" ]] || fail "missing version.txt"
+current_version="$(tr -d '[:space:]' < version.txt)"
+[[ "${current_version}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || fail "version.txt must contain strict semver X.Y.Z"
+major="${BASH_REMATCH[1]}"
+minor="${BASH_REMATCH[2]}"
+patch="${BASH_REMATCH[3]}"
+next_patch=$((patch + 1))
+next_version="${major}.${minor}.${next_patch}"
+next_tag="v${next_version}"
+
+STEP="tag-collision-check-local"
+if git rev-parse -q --verify "refs/tags/${next_tag}" >/dev/null; then
+  fail "tag already exists locally: ${next_tag}"
+fi
+
+STEP="tag-collision-check-remote"
+if [[ -n "$(git ls-remote --tags origin "refs/tags/${next_tag}")" ]]; then
+  fail "tag already exists on origin: ${next_tag}"
+fi
+
+echo "publish-release"
+echo "  current_version=${current_version}"
+echo "  next_version=${next_version}"
+echo "  next_tag=${next_tag}"
+echo "  branch=${current_branch}"
+
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+  echo "dry-run: no files changed, no commit pushed, no tag pushed"
+  exit 0
+fi
+
+STEP="write-version"
+printf "%s\n" "${next_version}" > version.txt
+
+STEP="commit-version"
+git add version.txt
+git commit -m "chore(release): bump version to ${next_version}"
+
+STEP="push-commit"
+git push origin main
+
+STEP="create-tag"
+git tag -a "${next_tag}" -m "release ${next_tag}"
+
+STEP="push-tag"
+if ! git push origin "${next_tag}"; then
+  echo "publish-release failed after commit push." >&2
+  echo "recovery: retry tag push with: git push origin ${next_tag}" >&2
+  exit 1
+fi
+
+STEP="done"
+echo "publish-release completed successfully"
+echo "  pushed commit on main with version.txt=${next_version}"
+echo "  pushed tag ${next_tag}"

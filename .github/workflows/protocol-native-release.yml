@@ -554,6 +554,40 @@ jobs:
           update_native_manifest "${S3_BUCKET_YUM}" "${MANIFEST_YUM_KEY}" "${SNAPSHOT_YUM}" "${ALIAS_YUM}"
           update_native_manifest "${S3_BUCKET_BREW}" "${MANIFEST_BREW_KEY}" "${SNAPSHOT_BREW}" "${ALIAS_BREW}"
 
+      - name: Invalidate CloudFront metadata paths
+        shell: bash
+        env:
+          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          CF_DIST_APT: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_APT }}
+          CF_DIST_YUM: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_YUM }}
+          CF_DIST_BREW: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_BREW }}
+        run: |
+          set -euo pipefail
+          PREFIX="${S3_PREFIX%/}"
+          for v in CF_DIST_APT CF_DIST_YUM CF_DIST_BREW; do
+            if [[ -z "${!v:-}" ]]; then
+              echo "Missing required repo variable: ${v}" >&2
+              exit 1
+            fi
+          done
+
+          apt_id="$(aws cloudfront create-invalidation \
+            --distribution-id "${CF_DIST_APT}" \
+            --paths "/${PREFIX}/dists/stable/*" \
+            --query 'Invalidation.Id' --output text)"
+          yum_id="$(aws cloudfront create-invalidation \
+            --distribution-id "${CF_DIST_YUM}" \
+            --paths "/${PREFIX}/x86_64/repodata/*" "/${PREFIX}/aarch64/repodata/*" \
+            --query 'Invalidation.Id' --output text)"
+          brew_id="$(aws cloudfront create-invalidation \
+            --distribution-id "${CF_DIST_BREW}" \
+            --paths "/${PREFIX}/todero-native.rb" "/${PREFIX}/todero-release-manifest-*.json" \
+            --query 'Invalidation.Id' --output text)"
+
+          aws cloudfront wait invalidation-completed --distribution-id "${CF_DIST_APT}" --id "${apt_id}"
+          aws cloudfront wait invalidation-completed --distribution-id "${CF_DIST_YUM}" --id "${yum_id}"
+          aws cloudfront wait invalidation-completed --distribution-id "${CF_DIST_BREW}" --id "${brew_id}"
+
       - name: Upload consolidated native artifacts
         uses: actions/upload-artifact@v4
         with:
