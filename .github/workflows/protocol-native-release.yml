@@ -84,8 +84,14 @@ jobs:
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
         run: |
-          brew update
-          brew install openssl@3 pkg-config
+          set -euo pipefail
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          export HOMEBREW_NO_INSTALL_CLEANUP=1
+          for formula in pkgconf openssl@3; do
+            if ! brew list --versions "${formula}" >/dev/null 2>&1; then
+              brew install "${formula}"
+            fi
+          done
 
       - name: Build v3-ffi release library
         shell: bash
