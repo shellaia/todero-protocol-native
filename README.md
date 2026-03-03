@@ -94,6 +94,12 @@ The release workflow now publishes real Linux packages:
 - `todero-native-<version>-1.x86_64.rpm`
 - `todero-native-<version>-1.aarch64.rpm`
 
+APT alias base URL (stable channel):
+
+```bash
+https://apt.social100.com/<S3_PREFIX>/channels/stable/apt
+```
+
 All Linux packages install:
 
 - native library under `/usr/lib/todero/native/<target-id>/`

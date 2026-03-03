@@ -120,19 +120,24 @@ The formula URL points to the darwin arm64 archive under alias root:
 
 Given `S3_PREFIX=<prefix>`:
 
-- Alias root:
-  - `s3://<bucket>/<prefix>/`
-- Immutable snapshot root:
-  - `s3://<bucket>/<prefix>/releases/<version>/`
+- Channel alias roots:
+  - APT: `s3://<apt-bucket>/<prefix>/channels/stable/apt/`
+  - YUM: `s3://<yum-bucket>/<prefix>/`
+  - BREW: `s3://<brew-bucket>/<prefix>/`
+- Immutable snapshot roots:
+  - APT: `s3://<apt-bucket>/<prefix>/releases/<version>/apt/`
+  - YUM: `s3://<yum-bucket>/<prefix>/releases/<version>/`
+  - BREW: `s3://<brew-bucket>/<prefix>/releases/<version>/`
 - Native manifest history index:
   - `s3://<bucket>/<prefix>/releases/manifest.json`
 
-Downstream consumers are expected to fetch artifacts from alias root path:
+Downstream consumers are expected to fetch artifacts from channel alias path:
 
-- `<prefix>/todero-native-<target>-<version>.tar.gz`
-- `<prefix>/todero-release-manifest-<version>.json`
+- YUM/BREW: `<prefix>/todero-native-<target>-<version>.tar.gz`
+- YUM/BREW: `<prefix>/todero-release-manifest-<version>.json`
+- APT: `<prefix>/channels/stable/apt/{dists,pool,...}`
 
-APT repository layout under alias root:
+APT repository layout under apt alias root:
 
 - `pool/main/t/todero-native/*.deb`
 - `dists/stable/main/binary-amd64/Packages{,.gz}`
