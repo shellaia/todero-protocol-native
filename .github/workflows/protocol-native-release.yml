@@ -79,7 +79,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+          sudo apt-get install -y pkg-config libssl-dev dpkg-dev rpm
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
@@ -148,6 +148,19 @@ jobs:
           echo "archive=${OUT_DIR}/${ARCHIVE}" >> "$GITHUB_OUTPUT"
           echo "checksum=${OUT_DIR}/${ARCHIVE}.sha256" >> "$GITHUB_OUTPUT"
 
+      - name: Build Linux packages (.deb/.rpm)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/package_linux_native.sh
+          VERSION="${{ steps.meta.outputs.version }}"
+          TARGET_ID="${{ matrix.target_id }}"
+          LIB_NAME="${{ matrix.lib_name }}"
+          LIB_PATH="target/release/${LIB_NAME}"
+          META_PATH="dist/native/${TARGET_ID}/metadata.json"
+          scripts/package_linux_native.sh "${VERSION}" "${TARGET_ID}" "${LIB_PATH}" "${META_PATH}" "dist/native/packages"
+
       - name: Upload target artifact bundle
         uses: actions/upload-artifact@v4
         with:
@@ -155,6 +168,8 @@ jobs:
           path: |
             ${{ steps.package.outputs.archive }}
             ${{ steps.package.outputs.checksum }}
+            dist/native/packages/**/*.deb
+            dist/native/packages/**/*.rpm
           if-no-files-found: error
 
   publish_and_gate:
@@ -212,6 +227,18 @@ jobs:
               exit 1
             fi
           done
+          deb_amd64=(dist/release/packages/deb/todero-native_*_amd64.deb)
+          deb_arm64=(dist/release/packages/deb/todero-native_*_arm64.deb)
+          rpm_x64=(dist/release/packages/rpm/todero-native-*.x86_64.rpm)
+          rpm_arm64=(dist/release/packages/rpm/todero-native-*.aarch64.rpm)
+          if [[ ${#deb_amd64[@]} -lt 1 || ${#deb_arm64[@]} -lt 1 ]]; then
+            echo "Missing expected .deb packages (amd64/arm64)." >&2
+            exit 1
+          fi
+          if [[ ${#rpm_x64[@]} -lt 1 || ${#rpm_arm64[@]} -lt 1 ]]; then
+            echo "Missing expected .rpm packages (x86_64/aarch64)." >&2
+            exit 1
+          fi
 
       - name: Build release manifest
         shell: bash
@@ -285,6 +312,42 @@ jobs:
           chmod +x scripts/generate_brew_formula.sh
           base_url="https://${S3_BUCKET_BREW}.s3.${AWS_REGION}.amazonaws.com/${S3_PREFIX%/}"
           scripts/generate_brew_formula.sh "${VERSION}" "${base_url}" "dist/release"
+
+      - name: Install packaging metadata toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev createrepo-c
+
+      - name: Build apt/yum repository metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build_package_repos.sh
+          scripts/build_package_repos.sh dist/release
+
+      - name: Sign apt repository metadata
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/sign_package_repos.sh
+          scripts/sign_package_repos.sh apt dist/release/repos/apt
+
+      - name: Sign yum repository metadata
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.YUM_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.YUM_GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.YUM_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/sign_package_repos.sh
+          scripts/sign_package_repos.sh yum dist/release/repos/yum
 
       - name: Sign release artifacts (APT key)
         shell: bash
@@ -380,10 +443,12 @@ jobs:
           find dist/release -maxdepth 1 -type f -name '*.apt.asc' -exec cp {} "${STAGE_APT}/" \;
           cp dist/release/todero-native-repo-apt.gpg "${STAGE_APT}/"
           cp dist/release/todero-native-repo-apt.asc "${STAGE_APT}/"
+          cp -a dist/release/repos/apt/. "${STAGE_APT}/"
 
           find dist/release -maxdepth 1 -type f -name '*.yum.asc' -exec cp {} "${STAGE_YUM}/" \;
           cp dist/release/todero-native-repo-yum.gpg "${STAGE_YUM}/"
           cp dist/release/todero-native-repo-yum.asc "${STAGE_YUM}/"
+          cp -a dist/release/repos/yum/. "${STAGE_YUM}/"
 
           # Build per-channel manifest with only that channel's entries.
           build_channel_manifest() {
@@ -413,6 +478,13 @@ jobs:
               --exclude "*" \
               --include "*.json" \
               --include "*.sha256" \
+              --include "dists/stable/Release" \
+              --include "dists/stable/Release.gpg" \
+              --include "dists/stable/InRelease" \
+              --include "dists/stable/main/binary-amd64/Packages" \
+              --include "dists/stable/main/binary-amd64/Packages.gz" \
+              --include "dists/stable/main/binary-arm64/Packages" \
+              --include "dists/stable/main/binary-arm64/Packages.gz" \
               --include "*.apt.asc" \
               --include "todero-native-repo-apt.gpg" \
               --include "todero-native-repo-apt.asc" \
@@ -423,6 +495,7 @@ jobs:
               --exclude "*" \
               --include "*.json" \
               --include "*.sha256" \
+              --include "repodata/*" \
               --include "*.yum.asc" \
               --include "todero-native-repo-yum.gpg" \
               --include "todero-native-repo-yum.asc" \

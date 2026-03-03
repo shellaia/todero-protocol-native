@@ -37,7 +37,7 @@ class ToderoNative < Formula
     cp_r Dir["darwin-aarch64/*"], native_dir
     ln_sf "darwin-aarch64", libexec/"native/current"
 
-    (bin/"todero-native-info").write <<~EOS
+    (bin/"tninfo").write <<~EOS
       #!/usr/bin/env bash
       set -euo pipefail
       echo "#{libexec}/native/current"
@@ -52,7 +52,7 @@ class ToderoNative < Formula
   end
 
   test do
-    assert_match "native/current", shell_output("#{bin}/todero-native-info")
+    assert_match "native/current", shell_output("#{bin}/tninfo")
   end
 end
 EOF

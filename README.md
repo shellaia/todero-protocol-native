@@ -63,6 +63,28 @@ After a release is published:
 brew install --formula "https://<brew-domain>/<S3_PREFIX>/todero-native.rb"
 ```
 
+After install, resolve native path with:
+
+```bash
+tninfo
+export TODERO_V3_NATIVE_PATH="$(tninfo)"
+```
+
+## Linux Install (APT/YUM)
+
+The release workflow now publishes real Linux packages:
+
+- `todero-native_<version>_amd64.deb`
+- `todero-native_<version>_arm64.deb`
+- `todero-native-<version>-1.x86_64.rpm`
+- `todero-native-<version>-1.aarch64.rpm`
+
+All Linux packages install:
+
+- native library under `/usr/lib/todero/native/<target-id>/`
+- symlink `/usr/lib/todero/native/current`
+- resolver command `/usr/bin/tninfo`
+
 ## Release Workflow Secrets
 
 `protocol-native-release.yml` requires:

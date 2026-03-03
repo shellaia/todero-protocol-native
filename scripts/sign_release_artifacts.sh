@@ -61,6 +61,8 @@ targets=(
   "${ART_DIR}"/*.sha256
   "${ART_DIR}"/*.json
   "${ART_DIR}"/*.rb
+  "${ART_DIR}"/packages/deb/*.deb
+  "${ART_DIR}"/packages/rpm/*.rpm
 )
 
 if [[ "${#targets[@]}" -eq 0 ]]; then
