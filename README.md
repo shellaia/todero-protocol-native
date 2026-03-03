@@ -97,7 +97,7 @@ The release workflow now publishes real Linux packages:
 APT alias base URL (stable channel):
 
 ```bash
-https://apt.social100.com/<S3_PREFIX>/channels/stable/apt
+https://apt.social100.com/<S3_PREFIX>/channels/stable
 ```
 
 All Linux packages install:

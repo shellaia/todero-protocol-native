@@ -121,11 +121,11 @@ The formula URL points to the darwin arm64 archive under alias root:
 Given `S3_PREFIX=<prefix>`:
 
 - Channel alias roots:
-  - APT: `s3://<apt-bucket>/<prefix>/channels/stable/apt/`
+  - APT: `s3://<apt-bucket>/<prefix>/channels/stable/`
   - YUM: `s3://<yum-bucket>/<prefix>/`
   - BREW: `s3://<brew-bucket>/<prefix>/`
 - Immutable snapshot roots:
-  - APT: `s3://<apt-bucket>/<prefix>/releases/<version>/apt/`
+  - APT: `s3://<apt-bucket>/<prefix>/releases/<version>/`
   - YUM: `s3://<yum-bucket>/<prefix>/releases/<version>/`
   - BREW: `s3://<brew-bucket>/<prefix>/releases/<version>/`
 - Native manifest history index:
@@ -135,7 +135,7 @@ Downstream consumers are expected to fetch artifacts from channel alias path:
 
 - YUM/BREW: `<prefix>/todero-native-<target>-<version>.tar.gz`
 - YUM/BREW: `<prefix>/todero-release-manifest-<version>.json`
-- APT: `<prefix>/channels/stable/apt/{dists,pool,...}`
+- APT: `<prefix>/channels/stable/{dists,pool,...}`
 
 APT repository layout under apt alias root:
 

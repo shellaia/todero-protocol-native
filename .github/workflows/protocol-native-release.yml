@@ -414,8 +414,8 @@ jobs:
             exit 1
           fi
 
-          SNAPSHOT_APT="s3://${S3_BUCKET_APT}/${PREFIX}/releases/${VERSION}/apt/"
-          ALIAS_APT="s3://${S3_BUCKET_APT}/${PREFIX}/channels/stable/apt/"
+          SNAPSHOT_APT="s3://${S3_BUCKET_APT}/${PREFIX}/releases/${VERSION}/"
+          ALIAS_APT="s3://${S3_BUCKET_APT}/${PREFIX}/channels/stable/"
           MANIFEST_APT_KEY="${PREFIX}/releases/manifest.json"
           SNAPSHOT_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/releases/${VERSION}/"
           ALIAS_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/"
@@ -573,7 +573,7 @@ jobs:
 
           apt_id="$(aws cloudfront create-invalidation \
             --distribution-id "${CF_DIST_APT}" \
-            --paths "/${PREFIX}/channels/stable/apt/dists/stable/*" \
+            --paths "/${PREFIX}/channels/stable/dists/stable/*" \
             --query 'Invalidation.Id' --output text)"
           yum_id="$(aws cloudfront create-invalidation \
             --distribution-id "${CF_DIST_YUM}" \
