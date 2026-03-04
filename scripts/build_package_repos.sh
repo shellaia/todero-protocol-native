@@ -54,13 +54,13 @@ mkdir -p "$(dirname "${RELEASE_FILE}")"
   echo "Description: Todero native apt repository"
   echo "SHA256:"
   for f in \
-    dists/stable/main/binary-amd64/Packages \
-    dists/stable/main/binary-amd64/Packages.gz \
-    dists/stable/main/binary-arm64/Packages \
-    dists/stable/main/binary-arm64/Packages.gz; do
-    if [[ -f "${APT_ROOT}/${f}" ]]; then
-      sum="$(sha256sum "${APT_ROOT}/${f}" | awk '{print $1}')"
-      size="$(wc -c < "${APT_ROOT}/${f}" | tr -d ' ')"
+    main/binary-amd64/Packages \
+    main/binary-amd64/Packages.gz \
+    main/binary-arm64/Packages \
+    main/binary-arm64/Packages.gz; do
+    if [[ -f "${APT_ROOT}/dists/stable/${f}" ]]; then
+      sum="$(sha256sum "${APT_ROOT}/dists/stable/${f}" | awk '{print $1}')"
+      size="$(wc -c < "${APT_ROOT}/dists/stable/${f}" | tr -d ' ')"
       printf " %s %16s %s\n" "${sum}" "${size}" "${f}"
     fi
   done
