@@ -36,18 +36,21 @@ jobs:
             lib_name: libv3_ffi.so
             os_family: linux
             arch: x86_64
+            toolchain: gnu
             target_triple: x86_64-unknown-linux-gnu
           - target_id: linux-aarch64-gnu
             runner: ubuntu-24.04-arm
             lib_name: libv3_ffi.so
             os_family: linux
             arch: aarch64
+            toolchain: gnu
             target_triple: aarch64-unknown-linux-gnu
           - target_id: darwin-aarch64
             runner: macos-14
             lib_name: libv3_ffi.dylib
             os_family: darwin
             arch: aarch64
+            toolchain: darwin
             target_triple: aarch64-apple-darwin
 
     steps:
@@ -125,6 +128,8 @@ jobs:
           OUT_DIR="dist/native"
           PAYLOAD_DIR="${OUT_DIR}/${TARGET_ID}"
           ARCHIVE="todero-native-${TARGET_ID}-${VERSION}.tar.gz"
+          META_OUT="${OUT_DIR}/metadata-${TARGET_ID}.json"
+          BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           mkdir -p "${PAYLOAD_DIR}"
           cp "${LIB_PATH}" "${PAYLOAD_DIR}/${LIB_NAME}"
@@ -137,6 +142,9 @@ jobs:
             "target_triple": "${{ matrix.target_triple }}",
             "os": "${{ matrix.os_family }}",
             "arch": "${{ matrix.arch }}",
+            "toolchain": "${{ matrix.toolchain }}",
+            "commit": "${{ github.sha }}",
+            "built_at": "${BUILT_AT}",
             "library": "${LIB_NAME}"
           }
           META
@@ -144,15 +152,22 @@ jobs:
           tar -C "${OUT_DIR}" -czf "${OUT_DIR}/${ARCHIVE}" "${TARGET_ID}"
 
           python3 - <<PY
+          import json
           import hashlib
           from pathlib import Path
+          metadata_path = Path("${PAYLOAD_DIR}/metadata.json")
           archive = Path("${OUT_DIR}/${ARCHIVE}")
           sha = hashlib.sha256(archive.read_bytes()).hexdigest()
           Path(f"${OUT_DIR}/${ARCHIVE}.sha256").write_text(f"{sha}  {archive.name}\\n", encoding="utf-8")
+          metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+          metadata["sha256"] = sha
+          metadata_path.write_text(json.dumps(metadata, indent=2) + "\\n", encoding="utf-8")
+          Path("${META_OUT}").write_text(json.dumps(metadata, indent=2) + "\\n", encoding="utf-8")
           PY
 
           echo "archive=${OUT_DIR}/${ARCHIVE}" >> "$GITHUB_OUTPUT"
           echo "checksum=${OUT_DIR}/${ARCHIVE}.sha256" >> "$GITHUB_OUTPUT"
+          echo "metadata=${META_OUT}" >> "$GITHUB_OUTPUT"
 
       - name: Build Linux packages (.deb/.rpm)
         if: runner.os == 'Linux'
@@ -174,6 +189,7 @@ jobs:
           path: |
             ${{ steps.package.outputs.archive }}
             ${{ steps.package.outputs.checksum }}
+            ${{ steps.package.outputs.metadata }}
             dist/native/packages/**/*.deb
             dist/native/packages/**/*.rpm
           if-no-files-found: error
@@ -224,12 +240,29 @@ jobs:
           for t in "${expected[@]}"; do
             archives=(dist/release/todero-native-"${t}"-*.tar.gz)
             checksums=(dist/release/todero-native-"${t}"-*.tar.gz.sha256)
+            metadata=(dist/release/metadata-"${t}".json)
             if [[ ${#archives[@]} -lt 1 ]]; then
               echo "Missing native archive for target ${t}" >&2
               exit 1
             fi
+            if [[ ${#archives[@]} -ne 1 ]]; then
+              echo "Expected exactly one native archive for target ${t}, found ${#archives[@]}" >&2
+              exit 1
+            fi
             if [[ ${#checksums[@]} -lt 1 ]]; then
               echo "Missing checksum for target ${t}" >&2
+              exit 1
+            fi
+            if [[ ${#checksums[@]} -ne 1 ]]; then
+              echo "Expected exactly one checksum for target ${t}, found ${#checksums[@]}" >&2
+              exit 1
+            fi
+            if [[ ${#metadata[@]} -lt 1 ]]; then
+              echo "Missing metadata JSON for target ${t}" >&2
+              exit 1
+            fi
+            if [[ ${#metadata[@]} -ne 1 ]]; then
+              echo "Expected exactly one metadata JSON for target ${t}, found ${#metadata[@]}" >&2
               exit 1
             fi
           done
@@ -268,11 +301,15 @@ jobs:
               raise SystemExit("Missing VERSION in environment")
 
           entries = []
+          seen_archive_names = set()
           suffix = f"-{version}.tar.gz"
           for a in archives:
               name = a.name
               if not name.startswith("todero-native-") or not name.endswith(suffix):
                   raise SystemExit(f"Archive name does not match resolved version {version}: {name}")
+              if name in seen_archive_names:
+                  raise SystemExit(f"Duplicate archive artifact name detected: {name}")
+              seen_archive_names.add(name)
               target_id = name.removeprefix("todero-native-").removesuffix(suffix)
               if not target_id:
                   raise SystemExit(f"Unable to resolve target_id from archive: {name}")
@@ -281,12 +318,19 @@ jobs:
               for channel in ("apt", "yum", "brew"):
                   entries.append({
                       "name": "todero-native",
+                      "version": version,
                       "channel": channel,
                       "target_id": target_id,
                       "artifact_path": a.name,
                       "publication_path": a.name,
                       "sha256": sha,
                   })
+          seen_entries = set()
+          for e in entries:
+              key = (e["channel"], e["target_id"], e["version"])
+              if key in seen_entries:
+                  raise SystemExit(f"Duplicate manifest entry tuple detected: {key}")
+              seen_entries.add(key)
 
           manifest = {
               "version": version,
@@ -306,6 +350,75 @@ jobs:
           print(out)
           PY
 
+      - name: Validate release manifest schema and artifact mapping
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          release_dir = Path("dist/release")
+          manifest_path = release_dir / f"todero-release-manifest-{version}.json"
+          if not manifest_path.is_file():
+            raise SystemExit(f"missing manifest: {manifest_path}")
+          data = json.loads(manifest_path.read_text(encoding="utf-8"))
+          if not isinstance(data, dict):
+            raise SystemExit("manifest root must be object")
+          if data.get("version") != version:
+            raise SystemExit(f"manifest version mismatch: {data.get('version')} != {version}")
+          entries = data.get("native_artifacts")
+          if not isinstance(entries, list) or not entries:
+            raise SystemExit("manifest native_artifacts must be non-empty list")
+
+          required_keys = {
+            "name", "version", "channel", "target_id", "artifact_path", "publication_path", "sha256"
+          }
+          seen = set()
+          for idx, e in enumerate(entries):
+            if not isinstance(e, dict):
+              raise SystemExit(f"entry[{idx}] must be object")
+            missing = required_keys - set(e.keys())
+            if missing:
+              raise SystemExit(f"entry[{idx}] missing keys: {sorted(missing)}")
+            if e["name"] != "todero-native":
+              raise SystemExit(f"entry[{idx}] unexpected name: {e['name']}")
+            if e["version"] != version:
+              raise SystemExit(f"entry[{idx}] version mismatch: {e['version']}")
+            if e["channel"] not in {"apt", "yum", "brew"}:
+              raise SystemExit(f"entry[{idx}] invalid channel: {e['channel']}")
+            if e["publication_path"] != e["artifact_path"]:
+              raise SystemExit(f"entry[{idx}] publication_path must equal artifact_path")
+            key = (e["channel"], e["target_id"], e["version"])
+            if key in seen:
+              raise SystemExit(f"duplicate manifest tuple: {key}")
+            seen.add(key)
+
+            archive_path = release_dir / e["artifact_path"]
+            if not archive_path.is_file():
+              raise SystemExit(f"entry[{idx}] missing archive: {archive_path}")
+            checksum_path = archive_path.with_suffix(archive_path.suffix + ".sha256")
+            if not checksum_path.is_file():
+              raise SystemExit(f"entry[{idx}] missing checksum: {checksum_path}")
+            declared_sha = e["sha256"].strip().lower()
+            sha_line = checksum_path.read_text(encoding="utf-8").strip().split()
+            if not sha_line:
+              raise SystemExit(f"entry[{idx}] invalid checksum file: {checksum_path}")
+            file_sha = sha_line[0].strip().lower()
+            if file_sha != declared_sha:
+              raise SystemExit(f"entry[{idx}] checksum mismatch manifest vs sha file for {archive_path.name}")
+            computed_sha = hashlib.sha256(archive_path.read_bytes()).hexdigest().lower()
+            if computed_sha != declared_sha:
+              raise SystemExit(f"entry[{idx}] checksum mismatch manifest vs archive bytes for {archive_path.name}")
+
+          print(f"manifest validation passed: entries={len(entries)}")
+          PY
+
       - name: Generate brew formula
         shell: bash
         env:
@@ -318,6 +431,34 @@ jobs:
           chmod +x scripts/generate_brew_formula.sh
           base_url="https://${S3_BUCKET_BREW}.s3.${AWS_REGION}.amazonaws.com/${S3_PREFIX%/}"
           scripts/generate_brew_formula.sh "${VERSION}" "${base_url}" "dist/release"
+
+      - name: Validate generated brew formula URL and checksum
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
+          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          formula="dist/release/todero-native.rb"
+          archive="dist/release/todero-native-darwin-aarch64-${VERSION}.tar.gz"
+          test -f "${formula}"
+          test -f "${archive}"
+          expected_url="https://${S3_BUCKET_BREW}.s3.${AWS_REGION}.amazonaws.com/${S3_PREFIX%/}/todero-native-darwin-aarch64-${VERSION}.tar.gz"
+          if command -v sha256sum >/dev/null 2>&1; then
+            expected_sha="$(sha256sum "${archive}" | awk '{print $1}')"
+          else
+            expected_sha="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+          fi
+          formula_url="$(awk -F'"' '/^[[:space:]]*url /{print $2; exit}' "${formula}")"
+          formula_sha="$(awk -F'"' '/^[[:space:]]*sha256 /{print $2; exit}' "${formula}")"
+          if [[ -z "${formula_url}" || -z "${formula_sha}" ]]; then
+            echo "Failed to parse url/sha256 from ${formula}" >&2
+            exit 1
+          fi
+          [[ "${formula_url}" == "${expected_url}" ]]
+          [[ "${formula_sha}" == "${expected_sha}" ]]
 
       - name: Install packaging metadata toolchain
         shell: bash
@@ -377,6 +518,20 @@ jobs:
           chmod +x scripts/sign_release_artifacts.sh
           scripts/sign_release_artifacts.sh dist/release ".yum.asc" "todero-native-repo-yum"
 
+      - name: Verify apt repository metadata signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/verify_package_repo_signatures.sh
+          scripts/verify_package_repo_signatures.sh apt dist/release/repos/apt dist/release/todero-native-repo-apt.asc
+
+      - name: Verify yum repository metadata signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/verify_package_repo_signatures.sh
+          scripts/verify_package_repo_signatures.sh yum dist/release/repos/yum dist/release/todero-native-repo-yum.asc
+
       - name: Verify release signatures (APT key)
         shell: bash
         run: |
@@ -390,6 +545,21 @@ jobs:
           set -euo pipefail
           chmod +x scripts/verify_release_signatures.sh
           scripts/verify_release_signatures.sh dist/release ".yum.asc" dist/release/todero-native-repo-yum.asc
+
+      - name: Verify checksum files map to exact binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          sums=(dist/release/*.sha256)
+          if [[ ${#sums[@]} -eq 0 ]]; then
+            echo "No checksum files found in dist/release" >&2
+            exit 1
+          fi
+          (
+            cd dist/release
+            sha256sum -c --strict --quiet ./*.sha256
+          )
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -435,6 +605,7 @@ jobs:
           STAGE_APT="${STAGE_ROOT}/apt"
           STAGE_YUM="${STAGE_ROOT}/yum"
           STAGE_BREW="${STAGE_ROOT}/brew"
+          export STAGE_APT STAGE_YUM STAGE_BREW
           mkdir -p "${STAGE_APT}" "${STAGE_YUM}" "${STAGE_BREW}"
 
           # Common artifacts copied to all channels.
@@ -470,12 +641,68 @@ jobs:
           build_channel_manifest "yum" "${STAGE_YUM}"
           build_channel_manifest "brew" "${STAGE_BREW}"
 
+          # Validate filtered manifests are non-empty, well-formed, and map to staged artifacts.
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          stage = {
+              "apt": Path(os.environ["STAGE_APT"]),
+              "yum": Path(os.environ["STAGE_YUM"]),
+              "brew": Path(os.environ["STAGE_BREW"]),
+          }
+          required = {"name", "version", "channel", "target_id", "artifact_path", "publication_path", "sha256"}
+          for channel, root in stage.items():
+              mf = root / f"todero-release-manifest-{version}.json"
+              if not mf.is_file():
+                  raise SystemExit(f"missing filtered manifest: {mf}")
+              data = json.loads(mf.read_text(encoding="utf-8"))
+              entries = data.get("native_artifacts")
+              if not isinstance(entries, list) or not entries:
+                  raise SystemExit(f"filtered manifest empty for channel={channel}")
+              for idx, e in enumerate(entries):
+                  if not isinstance(e, dict):
+                      raise SystemExit(f"{mf} entry[{idx}] is not object")
+                  missing = required - set(e.keys())
+                  if missing:
+                      raise SystemExit(f"{mf} entry[{idx}] missing keys: {sorted(missing)}")
+                  if e["channel"] != channel:
+                      raise SystemExit(f"{mf} entry[{idx}] wrong channel={e['channel']}")
+                  if e["version"] != version:
+                      raise SystemExit(f"{mf} entry[{idx}] wrong version={e['version']}")
+                  if e["publication_path"] != e["artifact_path"]:
+                      raise SystemExit(f"{mf} entry[{idx}] publication_path mismatch")
+
+                  artifact = root / e["artifact_path"]
+                  if not artifact.is_file():
+                      raise SystemExit(f"{mf} entry[{idx}] missing staged artifact: {artifact}")
+                  checksum = root / f"{e['artifact_path']}.sha256"
+                  if not checksum.is_file():
+                      raise SystemExit(f"{mf} entry[{idx}] missing staged checksum: {checksum}")
+                  sha_line = checksum.read_text(encoding="utf-8").strip().split()
+                  if not sha_line:
+                      raise SystemExit(f"{mf} entry[{idx}] malformed checksum file")
+                  declared = e["sha256"].strip().lower()
+                  if sha_line[0].strip().lower() != declared:
+                      raise SystemExit(f"{mf} entry[{idx}] manifest/checksum mismatch")
+                  computed = hashlib.sha256(artifact.read_bytes()).hexdigest().lower()
+                  if computed != declared:
+                      raise SystemExit(f"{mf} entry[{idx}] artifact digest mismatch")
+          print("filtered manifest validation passed")
+          PY
+
           # Immutable snapshots + alias update (per-channel payload only).
-          aws s3 cp "${STAGE_APT}/" "${SNAPSHOT_APT}" --recursive
+          aws s3 cp "${STAGE_APT}/" "${SNAPSHOT_APT}" --recursive \
+              --cache-control "max-age=31536000, immutable"
           aws s3 cp "${STAGE_APT}/" "${ALIAS_APT}" --recursive
-          aws s3 cp "${STAGE_YUM}/" "${SNAPSHOT_YUM}" --recursive
+          aws s3 cp "${STAGE_YUM}/" "${SNAPSHOT_YUM}" --recursive \
+              --cache-control "max-age=31536000, immutable"
           aws s3 cp "${STAGE_YUM}/" "${ALIAS_YUM}" --recursive
-          aws s3 cp "${STAGE_BREW}/" "${SNAPSHOT_BREW}" --recursive
+          aws s3 cp "${STAGE_BREW}/" "${SNAPSHOT_BREW}" --recursive \
+              --cache-control "max-age=31536000, immutable"
           aws s3 cp "${STAGE_BREW}/" "${ALIAS_BREW}" --recursive
 
           # Mutable alias metadata/checksums: short TTL to avoid explicit invalidations.
@@ -560,6 +787,134 @@ jobs:
           update_native_manifest "${S3_BUCKET_YUM}" "${MANIFEST_YUM_KEY}" "${SNAPSHOT_YUM}" "${ALIAS_YUM}"
           update_native_manifest "${S3_BUCKET_BREW}" "${MANIFEST_BREW_KEY}" "${SNAPSHOT_BREW}" "${ALIAS_BREW}"
 
+          # Validate per-bucket release history manifest contract.
+          validate_bucket_manifest() {
+            local bucket="$1"
+            local key="$2"
+            local expected_snapshot="$3"
+            local expected_alias="$4"
+            local tmp_dir
+            local file
+            tmp_dir="$(mktemp -d)"
+            file="${tmp_dir}/manifest.json"
+            aws s3 cp "s3://${bucket}/${key}" "${file}" >/dev/null
+            python3 - "$file" "${VERSION}" "${expected_snapshot}" "${expected_alias}" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+version = sys.argv[2]
+expected_snapshot = sys.argv[3]
+expected_alias = sys.argv[4]
+
+data = json.loads(manifest_path.read_text(encoding="utf-8"))
+if not isinstance(data, dict):
+    raise SystemExit("bucket manifest root must be an object")
+if not isinstance(data.get("releases"), list):
+    raise SystemExit("bucket manifest releases must be a list")
+
+releases = data["releases"]
+if not releases:
+    raise SystemExit("bucket manifest releases must not be empty")
+
+iso_utc = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+versions = []
+for i, r in enumerate(releases):
+    if not isinstance(r, dict):
+        raise SystemExit(f"releases[{i}] must be object")
+    for k in ("version", "publishedAt", "snapshot", "alias"):
+        if not r.get(k):
+            raise SystemExit(f"releases[{i}] missing {k}")
+    if not iso_utc.match(str(r["publishedAt"])):
+        raise SystemExit(f"releases[{i}] invalid publishedAt format: {r['publishedAt']}")
+    versions.append(r["version"])
+
+if len(set(versions)) != len(versions):
+    raise SystemExit("bucket manifest contains duplicate versions")
+
+matching = [r for r in releases if r.get("version") == version]
+if len(matching) != 1:
+    raise SystemExit(f"expected exactly one entry for current version={version}, found={len(matching)}")
+cur = matching[0]
+if cur["snapshot"] != expected_snapshot:
+    raise SystemExit(f"snapshot pointer mismatch: {cur['snapshot']} != {expected_snapshot}")
+if cur["alias"] != expected_alias:
+    raise SystemExit(f"alias pointer mismatch: {cur['alias']} != {expected_alias}")
+
+# Monotonic check: list must be sorted in descending publishedAt order.
+times = [r["publishedAt"] for r in releases]
+if times != sorted(times, reverse=True):
+    raise SystemExit("bucket manifest releases are not sorted by publishedAt desc")
+PY
+            rm -rf "${tmp_dir}"
+          }
+
+          validate_bucket_manifest "${S3_BUCKET_APT}" "${MANIFEST_APT_KEY}" "${SNAPSHOT_APT}" "${ALIAS_APT}"
+          validate_bucket_manifest "${S3_BUCKET_YUM}" "${MANIFEST_YUM_KEY}" "${SNAPSHOT_YUM}" "${ALIAS_YUM}"
+          validate_bucket_manifest "${S3_BUCKET_BREW}" "${MANIFEST_BREW_KEY}" "${SNAPSHOT_BREW}" "${ALIAS_BREW}"
+
+          # Post-upload HEAD checks for critical objects.
+          head_uri() {
+            local uri="$1"
+            local no_scheme="${uri#s3://}"
+            local bucket="${no_scheme%%/*}"
+            local key="${no_scheme#*/}"
+            aws s3api head-object --bucket "${bucket}" --key "${key}" >/dev/null
+          }
+
+          verify_channel_objects() {
+            local snapshot_root="$1"
+            local alias_root="$2"
+            local check_formula="$3"
+            local check_apt_repo="$4"
+            local check_yum_repo="$5"
+            local version_manifest="todero-release-manifest-${VERSION}.json"
+            local targets=(
+              "linux-x86_64-gnu"
+              "linux-aarch64-gnu"
+              "darwin-aarch64"
+            )
+
+            for t in "${targets[@]}"; do
+              local archive="todero-native-${t}-${VERSION}.tar.gz"
+              local checksum="${archive}.sha256"
+              head_uri "${snapshot_root}${archive}"
+              head_uri "${snapshot_root}${checksum}"
+              head_uri "${alias_root}${archive}"
+              head_uri "${alias_root}${checksum}"
+            done
+
+            head_uri "${snapshot_root}${version_manifest}"
+            head_uri "${alias_root}${version_manifest}"
+
+            if [[ "${check_formula}" == "true" ]]; then
+              head_uri "${snapshot_root}todero-native.rb"
+              head_uri "${alias_root}todero-native.rb"
+            fi
+
+            if [[ "${check_apt_repo}" == "true" ]]; then
+              head_uri "${snapshot_root}dists/stable/InRelease"
+              head_uri "${snapshot_root}dists/stable/Release"
+              head_uri "${snapshot_root}dists/stable/Release.gpg"
+              head_uri "${alias_root}dists/stable/InRelease"
+              head_uri "${alias_root}dists/stable/Release"
+              head_uri "${alias_root}dists/stable/Release.gpg"
+            fi
+
+            if [[ "${check_yum_repo}" == "true" ]]; then
+              head_uri "${snapshot_root}repodata/repomd.xml"
+              head_uri "${snapshot_root}repodata/repomd.xml.asc"
+              head_uri "${alias_root}repodata/repomd.xml"
+              head_uri "${alias_root}repodata/repomd.xml.asc"
+            fi
+          }
+
+          verify_channel_objects "${SNAPSHOT_APT}" "${ALIAS_APT}" "false" "true" "false"
+          verify_channel_objects "${SNAPSHOT_YUM}" "${ALIAS_YUM}" "false" "false" "true"
+          verify_channel_objects "${SNAPSHOT_BREW}" "${ALIAS_BREW}" "true" "false" "false"
+
       - name: Invalidate CloudFront metadata paths
         shell: bash
         env:
@@ -567,6 +922,7 @@ jobs:
           CF_DIST_APT: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_APT }}
           CF_DIST_YUM: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_YUM }}
           CF_DIST_BREW: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_BREW }}
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
           PREFIX="${S3_PREFIX%/}"
@@ -594,6 +950,129 @@ jobs:
           aws cloudfront wait invalidation-completed --distribution-id "${CF_DIST_YUM}" --id "${yum_id}"
           aws cloudfront wait invalidation-completed --distribution-id "${CF_DIST_BREW}" --id "${brew_id}"
 
+      - name: Rollback dry-drill (non-destructive)
+        shell: bash
+        env:
+          S3_BUCKET_APT: ${{ secrets.S3_BUCKET_APT }}
+          S3_BUCKET_YUM: ${{ secrets.S3_BUCKET_YUM }}
+          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
+          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/rollback_alias_repoint.sh
+          PREFIX="${S3_PREFIX%/}"
+
+          choose_rollback_version() {
+            local bucket="$1"
+            local key="$2"
+            local current="$3"
+            local tmp
+            tmp="$(mktemp)"
+            if ! aws s3 cp "s3://${bucket}/${key}" "${tmp}" >/dev/null 2>&1; then
+              echo "${current}"
+              rm -f "${tmp}"
+              return
+            fi
+            python3 - "$tmp" "$current" <<'PY'
+import json
+import sys
+from pathlib import Path
+manifest = Path(sys.argv[1])
+current = sys.argv[2]
+data = json.loads(manifest.read_text(encoding="utf-8"))
+rels = data.get("releases", [])
+if not isinstance(rels, list) or not rels:
+    print(current)
+    raise SystemExit(0)
+for r in rels:
+    if isinstance(r, dict) and r.get("version") and r.get("version") != current:
+        print(r["version"])
+        raise SystemExit(0)
+print(current)
+PY
+            rm -f "${tmp}"
+          }
+
+          apt_ver="$(choose_rollback_version "${S3_BUCKET_APT}" "${PREFIX}/releases/manifest.json" "${VERSION}")"
+          yum_ver="$(choose_rollback_version "${S3_BUCKET_YUM}" "${PREFIX}/releases/manifest.json" "${VERSION}")"
+          brew_ver="$(choose_rollback_version "${S3_BUCKET_BREW}" "${PREFIX}/releases/manifest.json" "${VERSION}")"
+
+          echo "rollback dry-drill versions: apt=${apt_ver} yum=${yum_ver} brew=${brew_ver}"
+          scripts/rollback_alias_repoint.sh --channel apt --bucket "${S3_BUCKET_APT}" --prefix "${PREFIX}" --version "${apt_ver}"
+          scripts/rollback_alias_repoint.sh --channel yum --bucket "${S3_BUCKET_YUM}" --prefix "${PREFIX}" --version "${yum_ver}"
+          scripts/rollback_alias_repoint.sh --channel brew --bucket "${S3_BUCKET_BREW}" --prefix "${PREFIX}" --version "${brew_ver}"
+
+          mkdir -p dist/release
+          cat > dist/release/cloudfront-invalidations-${VERSION}.json <<EOF
+          {
+            "version": "${VERSION}",
+            "prefix": "${PREFIX}",
+            "completedAtUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "invalidation": {
+              "apt": { "distributionId": "${CF_DIST_APT}", "id": "${apt_id}" },
+              "yum": { "distributionId": "${CF_DIST_YUM}", "id": "${yum_id}" },
+              "brew": { "distributionId": "${CF_DIST_BREW}", "id": "${brew_id}" }
+            }
+          }
+          EOF
+          echo "APT invalidation id: ${apt_id}"
+          echo "YUM invalidation id: ${yum_id}"
+          echo "BREW invalidation id: ${brew_id}"
+
+      - name: Publish Brew Tap formula
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          BREW_TAP_REPO: ${{ secrets.BREW_TAP_REPO }}
+          BREW_TAP_TOKEN: ${{ secrets.BREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${BREW_TAP_REPO:?BREW_TAP_REPO is required for tagged releases}"
+          : "${BREW_TAP_TOKEN:?BREW_TAP_TOKEN is required for tagged releases}"
+          test -f dist/release/todero-native.rb
+
+          tap_dir="$(mktemp -d)"
+          trap 'rm -rf "${tap_dir}"' EXIT
+          git clone "https://x-access-token:${BREW_TAP_TOKEN}@github.com/${BREW_TAP_REPO}.git" "${tap_dir}"
+          mkdir -p "${tap_dir}/Formula"
+          cp dist/release/todero-native.rb "${tap_dir}/Formula/todero-native.rb"
+          (
+            cd "${tap_dir}"
+            # enforce ownership scope: only Formula/todero-native.rb can be changed by this workflow
+            changed="$(git status --porcelain)"
+            if [[ -n "${changed}" ]]; then
+              invalid="$(printf '%s\n' "${changed}" | awk '{print $2}' | grep -v '^Formula/todero-native.rb$' || true)"
+              if [[ -n "${invalid}" ]]; then
+                echo "Unexpected changed files in tap repo:" >&2
+                echo "${invalid}" >&2
+                exit 1
+              fi
+            fi
+            if git diff --quiet -- Formula/todero-native.rb; then
+              echo "No tap formula changes to publish."
+              exit 0
+            fi
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add Formula/todero-native.rb
+            git commit -m "Update todero-native formula"
+            git push origin HEAD:main
+          )
+
+      - name: Verify Brew tap formula matches generated formula
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          BREW_TAP_REPO: ${{ secrets.BREW_TAP_REPO }}
+        run: |
+          set -euo pipefail
+          : "${BREW_TAP_REPO:?BREW_TAP_REPO is required}"
+          tmp="$(mktemp)"
+          curl -fsSL "https://raw.githubusercontent.com/${BREW_TAP_REPO}/main/Formula/todero-native.rb" -o "${tmp}"
+          diff -u dist/release/todero-native.rb "${tmp}"
+          rm -f "${tmp}"
+
       - name: Upload consolidated native artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -609,3 +1088,25 @@ jobs:
             dist/release/*.tar.gz
             dist/release/*.sha256
             dist/release/todero-release-manifest-*.json
+
+  validate_brew_install:
+    name: Validate brew tap install (arm mac)
+    runs-on: macos-14
+    needs: publish_and_gate
+    if: startsWith(github.ref, 'refs/tags/v')
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      BREW_TAP_REPO: ${{ secrets.BREW_TAP_REPO }}
+    steps:
+      - name: Validate tap install flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${BREW_TAP_REPO:?BREW_TAP_REPO is required}"
+          brew untap "${BREW_TAP_REPO}" >/dev/null 2>&1 || true
+          brew tap "${BREW_TAP_REPO}"
+          brew reinstall todero-native || brew install todero-native
+          libdir="$(tninfo --libdir)"
+          [[ -n "${libdir}" ]]
+          [[ -d "${libdir}" ]]

@@ -56,6 +56,10 @@ ln -sfn "${TARGET_ID}" "${ROOT}/usr/lib/todero/native/current"
 cat > "${ROOT}/usr/bin/tninfo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" != "--libdir" ]]; then
+  echo "usage: tninfo --libdir" >&2
+  exit 2
+fi
 echo "/usr/lib/todero/native/current"
 EOF
 chmod 0755 "${ROOT}/usr/bin/tninfo"
@@ -64,10 +68,10 @@ cat > "${ROOT}/usr/share/doc/todero-native/README.md" <<'EOF'
 Todero Protocol Native Runtime
 
 Path resolver:
-  tninfo
+  tninfo --libdir
 
 Environment:
-  export TODERO_V3_NATIVE_PATH="$(tninfo)"
+  export TODERO_V3_NATIVE_PATH="$(tninfo --libdir)"
 EOF
 
 # Build .deb package

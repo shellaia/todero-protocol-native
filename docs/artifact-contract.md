@@ -53,6 +53,10 @@ Each tarball root folder is `<target>/` and must contain:
   - `target_triple`
   - `os`
   - `arch`
+  - `toolchain`
+  - `sha256`
+  - `commit`
+  - `built_at`
   - `library`
 
 ## Linux Package Content Contract
@@ -62,7 +66,7 @@ Each Linux package (`.deb`/`.rpm`) installs:
 - `/usr/lib/todero/native/<target-id>/libv3_ffi.so`
 - `/usr/lib/todero/native/<target-id>/metadata.json`
 - `/usr/lib/todero/native/current` (symlink)
-- `/usr/bin/tninfo` (prints `/usr/lib/todero/native/current`)
+- `/usr/bin/tninfo --libdir` (prints `/usr/lib/todero/native/current`)
 
 ## Release Manifest Name
 

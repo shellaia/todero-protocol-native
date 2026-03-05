@@ -40,6 +40,10 @@ class ToderoNative < Formula
     (bin/"tninfo").write <<~EOS
       #!/usr/bin/env bash
       set -euo pipefail
+      if [[ "\${1:-}" != "--libdir" ]]; then
+        echo "usage: tninfo --libdir" >&2
+        exit 2
+      fi
       echo "#{libexec}/native/current"
     EOS
   end
@@ -52,7 +56,7 @@ class ToderoNative < Formula
   end
 
   test do
-    assert_match "native/current", shell_output("#{bin}/tninfo")
+    assert_match "native/current", shell_output("#{bin}/tninfo --libdir")
   end
 end
 EOF
