@@ -29,6 +29,7 @@ This pattern is scoped only to distribution behavior.
      - APT: `.../channels/stable/...`
      - YUM/Brew: `.../<S3_PREFIX>/...`
    - Alias represents current only; history is preserved in release snapshots + manifest.
+   - Alias publish must be pruning/synchronizing (for example `aws s3 sync <stage> <alias> --delete`) so stale files from previous releases cannot remain in alias paths.
 
 4. Manifest rule:
    - Keep `.../releases/manifest.json` per channel bucket.
@@ -75,6 +76,7 @@ This pattern intentionally separates default installs from historical installs.
 1. Generated brew formula URL uses `brew.social100.com` and not direct S3 URL.
 2. APT/YUM/Brew artifacts exist in snapshot paths (`releases/<version>`).
 3. Alias paths resolve and point to current release payload.
+   - Alias roots must not retain stale artifacts from older releases after publish.
 4. `releases/manifest.json` includes current version entry with correct snapshot/alias.
 5. Brew tap formula in `shellaia/homebrew-todero` matches generated formula.
 6. APT alias-current and history-intact check (S3-only validation):

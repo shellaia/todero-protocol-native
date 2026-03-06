@@ -68,36 +68,6 @@ def _get_bytes(bucket: str, key: str) -> bytes:
     return _run_bytes(["aws", "s3", "cp", _s3_uri(bucket, key), "-"])
 
 
-def _list_keys(bucket: str, prefix: str) -> List[str]:
-    keys: List[str] = []
-    token: Optional[str] = None
-    while True:
-        cmd = [
-            "aws",
-            "s3api",
-            "list-objects-v2",
-            "--bucket",
-            bucket,
-            "--prefix",
-            prefix,
-            "--max-keys",
-            "1000",
-        ]
-        if token:
-            cmd.extend(["--continuation-token", token])
-        payload = json.loads(_run(cmd))
-        for item in payload.get("Contents", []):
-            key = item.get("Key")
-            if key:
-                keys.append(key)
-        if not payload.get("IsTruncated"):
-            break
-        token = payload.get("NextContinuationToken")
-        if not token:
-            break
-    return keys
-
-
 def _parse_packages_versions(text: str, package_name: str) -> Set[str]:
     versions: Set[str] = set()
     current_pkg: Optional[str] = None
@@ -256,32 +226,21 @@ def _validate_apt_snapshot_versions(
                     )
                 )
 
-        try:
-            keys = _list_keys(bucket, _join(base, "pool", "main", "t", "todero-native") + "/")
-        except Exception as exc:
-            errors.append(
-                ValidationError(
-                    "APT_SNAPSHOT_POOL_LIST_FAILED",
-                    "failed listing apt pool objects",
-                    {"version": version, "error": str(exc)},
-                )
-            )
-            keys = []
-
-        expected_debs = {
+        for deb_name in (
             f"todero-native_{version}_amd64.deb",
             f"todero-native_{version}_arm64.deb",
-        }
-        found_debs = {PurePosixPath(k).name for k in keys if k.endswith(".deb")}
-        missing_debs = expected_debs - found_debs
-        if missing_debs:
-            errors.append(
-                ValidationError(
-                    "APT_SNAPSHOT_DEB_MISSING",
-                    "apt snapshot missing expected deb package(s)",
-                    {"version": version, "missing": ",".join(sorted(missing_debs))},
+        ):
+            key = _join(base, "pool", "main", "t", "todero-native", deb_name)
+            try:
+                _head_object(bucket, key)
+            except Exception as exc:
+                errors.append(
+                    ValidationError(
+                        "APT_SNAPSHOT_DEB_MISSING",
+                        "apt snapshot missing expected deb package",
+                        {"version": version, "key": key, "error": str(exc)},
+                    )
                 )
-            )
 
         for arch in ("amd64", "arm64"):
             key = _join(

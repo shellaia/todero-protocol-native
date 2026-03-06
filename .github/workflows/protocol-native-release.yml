@@ -718,13 +718,15 @@ jobs:
           # Immutable snapshots + alias update (per-channel payload only).
           aws s3 cp "${STAGE_APT}/" "${SNAPSHOT_APT}" --recursive \
               --cache-control "max-age=31536000, immutable"
-          aws s3 cp "${STAGE_APT}/" "${ALIAS_APT}" --recursive
           aws s3 cp "${STAGE_YUM}/" "${SNAPSHOT_YUM}" --recursive \
               --cache-control "max-age=31536000, immutable"
-          aws s3 cp "${STAGE_YUM}/" "${ALIAS_YUM}" --recursive
           aws s3 cp "${STAGE_BREW}/" "${SNAPSHOT_BREW}" --recursive \
               --cache-control "max-age=31536000, immutable"
-          aws s3 cp "${STAGE_BREW}/" "${ALIAS_BREW}" --recursive
+
+          # Alias must remain current-only: prune stale files from prior releases.
+          aws s3 sync "${STAGE_APT}/" "${ALIAS_APT}" --delete
+          aws s3 sync "${STAGE_YUM}/" "${ALIAS_YUM}" --delete
+          aws s3 sync "${STAGE_BREW}/" "${ALIAS_BREW}" --delete
 
           # Mutable alias metadata/checksums: short TTL to avoid explicit invalidations.
           aws s3 cp "${STAGE_APT}/" "${ALIAS_APT}" \
