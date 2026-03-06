@@ -32,9 +32,12 @@ class ToderoNative < Formula
   depends_on arch: :arm64
 
   def install
+    source_dir = buildpath/"darwin-aarch64"
+    odie "missing native payload directory: #{source_dir}" unless source_dir.directory?
+
     native_dir = libexec/"native/darwin-aarch64"
     native_dir.mkpath
-    cp_r Dir["darwin-aarch64/*"], native_dir
+    native_dir.install source_dir.children
     ln_sf "darwin-aarch64", libexec/"native/current"
 
     (bin/"tninfo").write <<~EOS
