@@ -4,6 +4,11 @@
 Rollback for `todero-protocol-native` is alias repoint only.  
 Snapshots under `releases/<version>/` are immutable and must never be deleted during rollback.
 
+Distribution policy reference:
+- `agent-directives/patterns/distribution-pattern.md`
+- Alias is current-only.
+- Historical installs are served from `releases/<version>` snapshots.
+
 ## Pre-Checks (Mandatory)
 1. Identify rollback target version per channel (`apt`, `yum`, `brew`).
 2. Validate candidate snapshot completeness before any alias change:
@@ -34,11 +39,22 @@ scripts/rollback_alias_repoint.sh \
 Repeat for `yum` and `brew`.
 
 ## Post-Apply Verification Commands
-1. Confirm alias contains target manifest:
+1. Confirm alias contains target manifest (channel-specific alias paths):
 
 ```bash
+# APT alias
 aws s3api head-object \
-  --bucket <BUCKET> \
+  --bucket <S3_BUCKET_APT> \
+  --key "<S3_PREFIX>/channels/stable/todero-release-manifest-<TARGET_VERSION>.json"
+
+# YUM alias
+aws s3api head-object \
+  --bucket <S3_BUCKET_YUM> \
+  --key "<S3_PREFIX>/todero-release-manifest-<TARGET_VERSION>.json"
+
+# BREW alias
+aws s3api head-object \
+  --bucket <S3_BUCKET_BREW> \
   --key "<S3_PREFIX>/todero-release-manifest-<TARGET_VERSION>.json"
 ```
 

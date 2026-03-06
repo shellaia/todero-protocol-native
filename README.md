@@ -7,7 +7,7 @@ Standalone Rust workspace for Todero Protocol V3 native runtime and FFI.
 `todero-protocol-native` is the sole publisher for `todero-native` distribution assets:
 
 - native channel artifacts under this repo's S3 prefix
-- `Formula/todero-native.rb` in `biblip/homebrew-todero`
+- `Formula/todero-native.rb` in `shellaia/homebrew-todero`
 
 No other repository should publish `todero-native` artifacts or formula updates.
 
@@ -64,6 +64,7 @@ scripts/sync-from-todero.sh /absolute/path/to/todero/protocol-v3
 - Version and tag policy: `docs/versioning-policy.md`
 - Native artifact and manifest contract: `docs/artifact-contract.md`
 - Rollback runbook (alias repoint): `docs/rollback-runbook.md`
+- Distribution behavior pattern: `agent-directives/patterns/distribution-pattern.md`
 
 ## Release Automation (Patch)
 
@@ -85,7 +86,7 @@ Rules:
 Recommended:
 
 ```bash
-brew tap biblip/homebrew-todero
+brew tap shellaia/homebrew-todero
 brew install todero-native
 ```
 
@@ -162,14 +163,48 @@ sudo dnf install -y todero-native
 - `YUM_GPG_PRIVATE_KEY`
 - `YUM_GPG_PASSPHRASE` (optional if key has no passphrase)
 - `YUM_GPG_KEY_ID` (optional; auto-detected if omitted)
-- `BREW_TAP_REPO` (example: `biblip/homebrew-todero`)
-- `BREW_TAP_TOKEN` (token with write access to tap repo)
+
+Required repository variables:
+
+- `BREW_TAP_REPO` (example: `shellaia/homebrew-todero`)
+- `BREW_TAP_APP_ID`
 
 Required repository variables:
 
 - `CLOUDFRONT_DISTRIBUTION_ID_APT`
 - `CLOUDFRONT_DISTRIBUTION_ID_YUM`
 - `CLOUDFRONT_DISTRIBUTION_ID_BREW`
+
+Required repository secrets:
+
+- `BREW_TAP_APP_PRIVATE_KEY`
+
+Brew tap publishing auth model:
+- GitHub App token minting is used in workflow (`actions/create-github-app-token@v1`).
+- Legacy PAT-based `BREW_TAP_TOKEN` is not used by the release workflow.
+
+## Alias vs Snapshot Install Policy
+
+Alias is always current-only, snapshots are immutable history.
+
+- APT latest/current:
+  - Source: `https://apt.social100.com/<S3_PREFIX>/channels/stable`
+  - Install: `sudo apt install todero-native`
+- APT historical:
+  - Source: `https://apt.social100.com/<S3_PREFIX>/releases/<VERSION>`
+  - Install: `sudo apt install todero-native=<VERSION>`
+
+- YUM latest/current:
+  - Source: `https://yum.social100.com/<S3_PREFIX>/`
+  - Install: `sudo dnf install -y todero-native`
+- YUM historical:
+  - Source: `https://yum.social100.com/<S3_PREFIX>/releases/<VERSION>/`
+  - Install from that repo metadata.
+
+- Brew latest/current:
+  - Formula: `https://brew.social100.com/<S3_PREFIX>/todero-native.rb`
+- Brew historical:
+  - Formula: `https://brew.social100.com/<S3_PREFIX>/releases/<VERSION>/todero-native.rb`
 
 ## Release Lifecycle And Failure Handling
 
@@ -178,8 +213,9 @@ Canonical release lifecycle:
 2. Workflow builds/signs/verifies artifacts and repository metadata.
 3. Workflow publishes snapshots first, then alias payloads.
 4. Workflow updates per-bucket history manifest (`releases/manifest.json`).
-5. Workflow invalidates CloudFront alias metadata paths.
-6. Workflow publishes brew tap formula and validates install on arm mac.
+5. Workflow validates alias current-only + historical snapshot installability invariants.
+6. Workflow invalidates CloudFront alias metadata paths.
+7. Workflow publishes brew tap formula and validates install on arm mac.
 
 Failure handling:
 - Build/manifest failure:

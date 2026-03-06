@@ -891,6 +891,24 @@ jobs:
           verify_channel_objects "${SNAPSHOT_YUM}" "${ALIAS_YUM}" "false" "false" "true"
           verify_channel_objects "${SNAPSHOT_BREW}" "${ALIAS_BREW}" "true" "false" "false"
 
+      - name: Validate alias current-only and history integrity
+        shell: bash
+        env:
+          S3_BUCKET_APT: ${{ secrets.S3_BUCKET_APT }}
+          S3_BUCKET_YUM: ${{ secrets.S3_BUCKET_YUM }}
+          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
+          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/validate_alias_and_history.py
+          python3 scripts/validate_alias_and_history.py \
+            --bucket-apt "${S3_BUCKET_APT}" \
+            --bucket-yum "${S3_BUCKET_YUM}" \
+            --bucket-brew "${S3_BUCKET_BREW}" \
+            --prefix "${S3_PREFIX%/}" \
+            --current-version "${VERSION}"
+
       - name: Invalidate CloudFront metadata paths
         shell: bash
         env:
