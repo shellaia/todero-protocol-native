@@ -1013,13 +1013,16 @@ jobs:
         shell: bash
         env:
           BREW_TAP_REPO: ${{ secrets.BREW_TAP_REPO }}
+          BREW_TAP_TOKEN: ${{ secrets.BREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
           : "${BREW_TAP_REPO:?BREW_TAP_REPO is required}"
-          tmp="$(mktemp)"
-          curl -fsSL "https://raw.githubusercontent.com/${BREW_TAP_REPO}/main/Formula/todero-native.rb" -o "${tmp}"
-          diff -u dist/release/todero-native.rb "${tmp}"
-          rm -f "${tmp}"
+          : "${BREW_TAP_TOKEN:?BREW_TAP_TOKEN is required}"
+          tap_dir="$(mktemp -d)"
+          trap 'rm -rf "${tap_dir}"' EXIT
+          git clone "https://x-access-token:${BREW_TAP_TOKEN}@github.com/${BREW_TAP_REPO}.git" "${tap_dir}" >/dev/null 2>&1
+          test -f "${tap_dir}/Formula/todero-native.rb"
+          diff -u dist/release/todero-native.rb "${tap_dir}/Formula/todero-native.rb"
 
       - name: Upload consolidated native artifacts
         uses: actions/upload-artifact@v4
