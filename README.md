@@ -134,11 +134,11 @@ sudo apt install -y todero-native
 sudo tee /etc/yum.repos.d/todero-native.repo >/dev/null <<'EOF'
 [todero-native]
 name=Todero Native
-baseurl=https://yum.social100.com/<S3_PREFIX>/
+baseurl=https://yum.social100.com/<S3_PREFIX>/channels/stable/
 enabled=1
 gpgcheck=1
 repo_gpgcheck=1
-gpgkey=https://yum.social100.com/<S3_PREFIX>/todero-native-repo-yum.asc
+gpgkey=https://yum.social100.com/<S3_PREFIX>/channels/stable/todero-native-repo-yum.asc
 EOF
 
 sudo dnf clean all || true
@@ -195,14 +195,14 @@ Alias is always current-only, snapshots are immutable history.
   - Install: `sudo apt install todero-native=<VERSION>`
 
 - YUM latest/current:
-  - Source: `https://yum.social100.com/<S3_PREFIX>/`
+  - Source: `https://yum.social100.com/<S3_PREFIX>/channels/stable/`
   - Install: `sudo dnf install -y todero-native`
 - YUM historical:
   - Source: `https://yum.social100.com/<S3_PREFIX>/releases/<VERSION>/`
   - Install from that repo metadata.
 
 - Brew latest/current:
-  - Formula: `https://brew.social100.com/<S3_PREFIX>/todero-native.rb`
+  - Formula: `https://brew.social100.com/<S3_PREFIX>/channels/stable/todero-native.rb`
 - Brew historical:
   - Formula: `https://brew.social100.com/<S3_PREFIX>/releases/<VERSION>/todero-native.rb`
 

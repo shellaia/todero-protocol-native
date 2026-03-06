@@ -198,6 +198,158 @@ def _validate_apt_alias_current_only(
         )
 
 
+def _validate_yum_alias_current_only(
+    errors: List[ValidationError],
+    bucket: str,
+    prefix: str,
+    current_version: str,
+) -> None:
+    base = _join(prefix, "channels", "stable")
+    repomd_key = _join(base, "repodata", "repomd.xml")
+    try:
+        repomd = _get_text(bucket, repomd_key)
+    except Exception as exc:
+        errors.append(
+            ValidationError(
+                "YUM_ALIAS_REPOMD_MISSING",
+                "failed reading yum alias repomd.xml",
+                {"key": repomd_key, "error": str(exc)},
+            )
+        )
+        return
+
+    try:
+        href = _extract_primary_href(repomd)
+    except Exception as exc:
+        errors.append(
+            ValidationError(
+                "YUM_ALIAS_REPOMD_PARSE_FAILED",
+                "failed parsing yum alias repomd.xml",
+                {"key": repomd_key, "error": str(exc)},
+            )
+        )
+        return
+
+    if not href:
+        errors.append(
+            ValidationError(
+                "YUM_ALIAS_PRIMARY_NOT_FOUND",
+                "yum alias repomd.xml missing primary metadata reference",
+                {"key": repomd_key},
+            )
+        )
+        return
+
+    primary_key = _join(base, href)
+    try:
+        primary_raw = _get_bytes(bucket, primary_key)
+    except Exception as exc:
+        errors.append(
+            ValidationError(
+                "YUM_ALIAS_PRIMARY_READ_FAILED",
+                "failed downloading yum alias primary metadata",
+                {"key": primary_key, "error": str(exc)},
+            )
+        )
+        return
+
+    try:
+        versions = _parse_yum_primary_versions(primary_raw, "todero-native")
+    except Exception as exc:
+        errors.append(
+            ValidationError(
+                "YUM_ALIAS_PRIMARY_PARSE_FAILED",
+                "failed parsing yum alias primary metadata",
+                {"key": primary_key, "error": str(exc)},
+            )
+        )
+        return
+
+    if versions != {current_version}:
+        errors.append(
+            ValidationError(
+                "YUM_ALIAS_NOT_CURRENT_ONLY",
+                "yum alias must expose exactly one effective current version",
+                {"expected": current_version, "found": ",".join(sorted(versions)) or "<none>"},
+            )
+        )
+
+
+def _validate_brew_alias_current_only(
+    errors: List[ValidationError],
+    bucket: str,
+    prefix: str,
+    current_version: str,
+) -> None:
+    base = _join(prefix, "channels", "stable")
+    formula_key = _join(base, "todero-native.rb")
+    try:
+        formula = _get_text(bucket, formula_key)
+    except Exception as exc:
+        errors.append(
+            ValidationError(
+                "BREW_ALIAS_FORMULA_MISSING",
+                "failed reading brew alias formula",
+                {"key": formula_key, "error": str(exc)},
+            )
+        )
+        return
+
+    url, sha = _parse_brew_formula(formula)
+    if not url or not sha:
+        errors.append(
+            ValidationError(
+                "BREW_ALIAS_FORMULA_PARSE_FAILED",
+                "brew alias formula missing url/sha256 entries",
+                {"key": formula_key},
+            )
+        )
+        return
+
+    expected_archive = f"todero-native-darwin-aarch64-{current_version}.tar.gz"
+    expected_url = f"https://brew.social100.com/{prefix}/channels/stable/{expected_archive}"
+    if url != expected_url:
+        errors.append(
+            ValidationError(
+                "BREW_ALIAS_URL_MISMATCH",
+                "brew alias formula url must target current stable alias archive",
+                {"expected": expected_url, "found": url},
+            )
+        )
+
+    checksum_key = _join(base, f"{expected_archive}.sha256")
+    try:
+        sha_text = _get_text(bucket, checksum_key)
+    except Exception as exc:
+        errors.append(
+            ValidationError(
+                "BREW_ALIAS_SHA_MISSING",
+                "brew alias checksum file missing/unreadable",
+                {"key": checksum_key, "error": str(exc)},
+            )
+        )
+        return
+
+    declared = sha_text.strip().split()[0].lower() if sha_text.strip() else ""
+    if not declared:
+        errors.append(
+            ValidationError(
+                "BREW_ALIAS_SHA_INVALID",
+                "brew alias checksum file is empty/invalid",
+                {"key": checksum_key},
+            )
+        )
+        return
+    if declared != sha:
+        errors.append(
+            ValidationError(
+                "BREW_ALIAS_SHA_MISMATCH",
+                "brew alias formula sha256 does not match alias checksum",
+                {"formula_sha": sha, "alias_sha": declared},
+            )
+        )
+
+
 def _validate_apt_snapshot_versions(
     errors: List[ValidationError],
     bucket: str,
@@ -494,6 +646,8 @@ def main() -> int:
     errors: List[ValidationError] = []
 
     _validate_apt_alias_current_only(errors, args.bucket_apt, prefix, current)
+    _validate_yum_alias_current_only(errors, args.bucket_yum, prefix, current)
+    _validate_brew_alias_current_only(errors, args.bucket_brew, prefix, current)
 
     apt_versions = _manifest_versions_or_error(errors, args.bucket_apt, prefix)
     yum_versions = _manifest_versions_or_error(errors, args.bucket_yum, prefix)

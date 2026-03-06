@@ -126,8 +126,8 @@ Given `S3_PREFIX=<prefix>`:
 
 - Channel alias roots:
   - APT: `s3://<apt-bucket>/<prefix>/channels/stable/`
-  - YUM: `s3://<yum-bucket>/<prefix>/`
-  - BREW: `s3://<brew-bucket>/<prefix>/`
+  - YUM: `s3://<yum-bucket>/<prefix>/channels/stable/`
+  - BREW: `s3://<brew-bucket>/<prefix>/channels/stable/`
 - Immutable snapshot roots:
   - APT: `s3://<apt-bucket>/<prefix>/releases/<version>/`
   - YUM: `s3://<yum-bucket>/<prefix>/releases/<version>/`
@@ -137,8 +137,8 @@ Given `S3_PREFIX=<prefix>`:
 
 Downstream consumers are expected to fetch artifacts from channel alias path:
 
-- YUM/BREW: `<prefix>/todero-native-<target>-<version>.tar.gz`
-- YUM/BREW: `<prefix>/todero-release-manifest-<version>.json`
+- YUM/BREW: `<prefix>/channels/stable/todero-native-<target>-<version>.tar.gz`
+- YUM/BREW: `<prefix>/channels/stable/todero-release-manifest-<version>.json`
 - APT: `<prefix>/channels/stable/{dists,pool,...}`
 
 APT repository layout under apt alias root:

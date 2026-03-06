@@ -47,7 +47,7 @@ PREFIX="${PREFIX%/}"
 SNAPSHOT_ROOT="s3://${BUCKET}/${PREFIX}/releases/${VERSION}/"
 case "${CHANNEL}" in
   apt) ALIAS_ROOT="s3://${BUCKET}/${PREFIX}/channels/stable/" ;;
-  yum|brew) ALIAS_ROOT="s3://${BUCKET}/${PREFIX}/" ;;
+  yum|brew) ALIAS_ROOT="s3://${BUCKET}/${PREFIX}/channels/stable/" ;;
 esac
 
 head_uri() {

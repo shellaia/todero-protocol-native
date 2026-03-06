@@ -50,12 +50,12 @@ aws s3api head-object \
 # YUM alias
 aws s3api head-object \
   --bucket <S3_BUCKET_YUM> \
-  --key "<S3_PREFIX>/todero-release-manifest-<TARGET_VERSION>.json"
+  --key "<S3_PREFIX>/channels/stable/todero-release-manifest-<TARGET_VERSION>.json"
 
 # BREW alias
 aws s3api head-object \
   --bucket <S3_BUCKET_BREW> \
-  --key "<S3_PREFIX>/todero-release-manifest-<TARGET_VERSION>.json"
+  --key "<S3_PREFIX>/channels/stable/todero-release-manifest-<TARGET_VERSION>.json"
 ```
 
 2. Confirm channel-critical metadata exists:
@@ -64,10 +64,10 @@ aws s3api head-object \
   - `<S3_PREFIX>/channels/stable/dists/stable/Release`
   - `<S3_PREFIX>/channels/stable/dists/stable/Release.gpg`
 - YUM alias:
-  - `<S3_PREFIX>/repodata/repomd.xml`
-  - `<S3_PREFIX>/repodata/repomd.xml.asc`
+  - `<S3_PREFIX>/channels/stable/repodata/repomd.xml`
+  - `<S3_PREFIX>/channels/stable/repodata/repomd.xml.asc`
 - BREW alias:
-  - `<S3_PREFIX>/todero-native.rb`
+  - `<S3_PREFIX>/channels/stable/todero-native.rb`
 
 3. Trigger/verify CloudFront metadata invalidation for alias paths after rollback.
 

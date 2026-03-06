@@ -452,7 +452,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x scripts/generate_brew_formula.sh
-          base_url="https://brew.social100.com/${S3_PREFIX%/}"
+          base_url="https://brew.social100.com/${S3_PREFIX%/}/channels/stable"
           scripts/generate_brew_formula.sh "${VERSION}" "${base_url}" "dist/release"
 
       - name: Validate generated brew formula URL and checksum
@@ -466,7 +466,7 @@ jobs:
           archive="dist/release/todero-native-darwin-aarch64-${VERSION}.tar.gz"
           test -f "${formula}"
           test -f "${archive}"
-          expected_url="https://brew.social100.com/${S3_PREFIX%/}/todero-native-darwin-aarch64-${VERSION}.tar.gz"
+          expected_url="https://brew.social100.com/${S3_PREFIX%/}/channels/stable/todero-native-darwin-aarch64-${VERSION}.tar.gz"
           if command -v sha256sum >/dev/null 2>&1; then
             expected_sha="$(sha256sum "${archive}" | awk '{print $1}')"
           else
@@ -615,10 +615,10 @@ jobs:
           ALIAS_APT="s3://${S3_BUCKET_APT}/${PREFIX}/channels/stable/"
           MANIFEST_APT_KEY="${PREFIX}/releases/manifest.json"
           SNAPSHOT_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/releases/${VERSION}/"
-          ALIAS_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/"
+          ALIAS_YUM="s3://${S3_BUCKET_YUM}/${PREFIX}/channels/stable/"
           MANIFEST_YUM_KEY="${PREFIX}/releases/manifest.json"
           SNAPSHOT_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/releases/${VERSION}/"
-          ALIAS_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/"
+          ALIAS_BREW="s3://${S3_BUCKET_BREW}/${PREFIX}/channels/stable/"
           MANIFEST_BREW_KEY="${PREFIX}/releases/manifest.json"
 
           STAGE_ROOT="$(mktemp -d)"
@@ -833,6 +833,14 @@ jobs:
           validate_bucket_manifest "${S3_BUCKET_YUM}" "${MANIFEST_YUM_KEY}" "${SNAPSHOT_YUM}" "${ALIAS_YUM}"
           validate_bucket_manifest "${S3_BUCKET_BREW}" "${MANIFEST_BREW_KEY}" "${SNAPSHOT_BREW}" "${ALIAS_BREW}"
 
+          # No backward compatibility: remove legacy root-alias objects (keep channels/ and releases/).
+          aws s3 rm "s3://${S3_BUCKET_YUM}/${PREFIX}/" --recursive \
+            --exclude "releases/*" \
+            --exclude "channels/*"
+          aws s3 rm "s3://${S3_BUCKET_BREW}/${PREFIX}/" --recursive \
+            --exclude "releases/*" \
+            --exclude "channels/*"
+
           # Post-upload HEAD checks for critical objects.
           head_uri() {
             local uri="$1"
@@ -935,11 +943,11 @@ jobs:
             --query 'Invalidation.Id' --output text)"
           yum_id="$(aws cloudfront create-invalidation \
             --distribution-id "${CF_DIST_YUM}" \
-            --paths "/${PREFIX}/x86_64/repodata/*" "/${PREFIX}/aarch64/repodata/*" \
+            --paths "/${PREFIX}/channels/stable/repodata/*" \
             --query 'Invalidation.Id' --output text)"
           brew_id="$(aws cloudfront create-invalidation \
             --distribution-id "${CF_DIST_BREW}" \
-            --paths "/${PREFIX}/todero-native.rb" "/${PREFIX}/todero-release-manifest-*.json" \
+            --paths "/${PREFIX}/channels/stable/todero-native.rb" "/${PREFIX}/channels/stable/todero-release-manifest-*.json" \
             --query 'Invalidation.Id' --output text)"
 
           aws cloudfront wait invalidation-completed --distribution-id "${CF_DIST_APT}" --id "${apt_id}"

@@ -26,8 +26,7 @@ This pattern is scoped only to distribution behavior.
 3. Alias/snapshot rule:
    - Immutable history: `.../releases/<version>/...`
    - Current alias:
-     - APT: `.../channels/stable/...`
-     - YUM/Brew: `.../<S3_PREFIX>/...`
+     - APT/YUM/Brew: `.../channels/stable/...`
    - Alias represents current only; history is preserved in release snapshots + manifest.
    - Alias publish must be pruning/synchronizing (for example `aws s3 sync <stage> <alias> --delete`) so stale files from previous releases cannot remain in alias paths.
 
@@ -55,12 +54,12 @@ This pattern intentionally separates default installs from historical installs.
 - If only alias is configured, `apt install todero-native=<VERSION>` works only when `<VERSION>` equals current alias version.
 
 ### YUM/DNF
-- Alias (`https://yum.social100.com/<S3_PREFIX>`) is current-only.
+- Alias (`https://yum.social100.com/<S3_PREFIX>/channels/stable`) is current-only.
 - Historical installs use snapshot repo path:
   - `https://yum.social100.com/<S3_PREFIX>/releases/<VERSION>/`
 
 ### Brew
-- Alias formula (`https://brew.social100.com/<S3_PREFIX>/todero-native.rb`) is current-only.
+- Alias formula (`https://brew.social100.com/<S3_PREFIX>/channels/stable/todero-native.rb`) is current-only.
 - Historical installs use snapshot formula URL:
   - `https://brew.social100.com/<S3_PREFIX>/releases/<VERSION>/todero-native.rb`
 
