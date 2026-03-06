@@ -972,7 +972,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
-          BREW_TAP_REPO: ${{ secrets.BREW_TAP_REPO }}
+          BREW_TAP_REPO: ${{ vars.BREW_TAP_REPO }}
           BREW_TAP_TOKEN: ${{ secrets.BREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
@@ -983,6 +983,12 @@ jobs:
           tap_dir="$(mktemp -d)"
           trap 'rm -rf "${tap_dir}"' EXIT
           git clone "https://x-access-token:${BREW_TAP_TOKEN}@github.com/${BREW_TAP_REPO}.git" "${tap_dir}"
+          if ! git -C "${tap_dir}" push --dry-run origin HEAD:main >/tmp/brew_tap_push_check.log 2>&1; then
+            echo "BREW_TAP_TOKEN cannot push to ${BREW_TAP_REPO} (main)." >&2
+            echo "Expected: token owner has Contents: Read and write on ${BREW_TAP_REPO}." >&2
+            cat /tmp/brew_tap_push_check.log >&2 || true
+            exit 1
+          fi
           mkdir -p "${tap_dir}/Formula"
           cp dist/release/todero-native.rb "${tap_dir}/Formula/todero-native.rb"
           (
@@ -1012,7 +1018,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
-          BREW_TAP_REPO: ${{ secrets.BREW_TAP_REPO }}
+          BREW_TAP_REPO: ${{ vars.BREW_TAP_REPO }}
           BREW_TAP_TOKEN: ${{ secrets.BREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
@@ -1063,7 +1069,7 @@ jobs:
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
-      BREW_TAP_REPO: ${{ secrets.BREW_TAP_REPO }}
+      BREW_TAP_REPO: ${{ vars.BREW_TAP_REPO }}
     steps:
       - name: Validate tap install flow
         shell: bash
