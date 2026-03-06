@@ -221,6 +221,13 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Prepare clean release staging directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist/release
+          mkdir -p dist/release
+
       - uses: actions/download-artifact@v4
         with:
           pattern: native-*
@@ -362,12 +369,34 @@ jobs:
           import os
           from pathlib import Path
 
+          def load_json_single_or_concatenated(path: Path):
+            text = path.read_text(encoding="utf-8")
+            decoder = json.JSONDecoder()
+            idx = 0
+            docs = []
+            n = len(text)
+            while idx < n:
+              while idx < n and text[idx].isspace():
+                idx += 1
+              if idx >= n:
+                break
+              obj, end = decoder.raw_decode(text, idx)
+              docs.append(obj)
+              idx = end
+            if not docs:
+              raise SystemExit(f"manifest is empty: {path}")
+            if len(docs) > 1:
+              # Keep pipeline deterministic even if the file was accidentally concatenated.
+              print(f"warning: manifest contained {len(docs)} concatenated JSON documents; canonicalizing to first document")
+              path.write_text(json.dumps(docs[0], indent=2) + "\n", encoding="utf-8")
+            return docs[0]
+
           version = os.environ["VERSION"]
           release_dir = Path("dist/release")
           manifest_path = release_dir / f"todero-release-manifest-{version}.json"
           if not manifest_path.is_file():
             raise SystemExit(f"missing manifest: {manifest_path}")
-          data = json.loads(manifest_path.read_text(encoding="utf-8"))
+          data = load_json_single_or_concatenated(manifest_path)
           if not isinstance(data, dict):
             raise SystemExit("manifest root must be object")
           if data.get("version") != version:
