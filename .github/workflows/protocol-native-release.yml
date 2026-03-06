@@ -997,7 +997,7 @@ jobs:
                 exit 1
               fi
             fi
-            if git diff --quiet -- Formula/todero-native.rb; then
+            if [[ -z "$(git status --porcelain -- Formula/todero-native.rb)" ]]; then
               echo "No tap formula changes to publish."
               exit 0
             fi
