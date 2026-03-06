@@ -35,8 +35,17 @@ case "${MODE}" in
         exit 1
       fi
     done
-    gpg --batch --verify "${release_gpg}" "${release_file}" >/dev/null 2>&1
-    gpg --batch --verify "${inrelease}" "${release_file}" >/dev/null 2>&1
+    if ! gpg --batch --verify "${release_gpg}" "${release_file}" >/tmp/verify-apt-release.log 2>&1; then
+      echo "apt detached signature verification failed: ${release_gpg}" >&2
+      cat /tmp/verify-apt-release.log >&2 || true
+      exit 2
+    fi
+    # InRelease is clear-signed; verify without detached payload argument.
+    if ! gpg --batch --verify "${inrelease}" >/tmp/verify-apt-inrelease.log 2>&1; then
+      echo "apt clear-signed verification failed: ${inrelease}" >&2
+      cat /tmp/verify-apt-inrelease.log >&2 || true
+      exit 2
+    fi
     ;;
   yum)
     repomd="${REPO_ROOT}/repodata/repomd.xml"
@@ -47,7 +56,11 @@ case "${MODE}" in
         exit 1
       fi
     done
-    gpg --batch --verify "${repomd_asc}" "${repomd}" >/dev/null 2>&1
+    if ! gpg --batch --verify "${repomd_asc}" "${repomd}" >/tmp/verify-yum-repomd.log 2>&1; then
+      echo "yum detached signature verification failed: ${repomd_asc}" >&2
+      cat /tmp/verify-yum-repomd.log >&2 || true
+      exit 2
+    fi
     ;;
   *)
     echo "unsupported mode: ${MODE}" >&2

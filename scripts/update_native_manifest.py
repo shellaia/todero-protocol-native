@@ -6,6 +6,18 @@ import sys
 from pathlib import Path
 
 
+def load_first_json_doc(text: str):
+    decoder = json.JSONDecoder()
+    idx = 0
+    n = len(text)
+    while idx < n and text[idx].isspace():
+        idx += 1
+    if idx >= n:
+        raise ValueError("empty JSON payload")
+    obj, _end = decoder.raw_decode(text, idx)
+    return obj
+
+
 def main() -> int:
     if len(sys.argv) != 7:
         raise SystemExit(
@@ -17,7 +29,7 @@ def main() -> int:
     dst_path = Path(dst)
 
     try:
-        data = json.loads(src_path.read_text(encoding="utf-8"))
+        data = load_first_json_doc(src_path.read_text(encoding="utf-8"))
     except Exception:
         data = {"schema": 1, "project": "todero-native", "channel": "native", "releases": []}
 

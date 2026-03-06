@@ -6,6 +6,19 @@ import sys
 from pathlib import Path
 
 
+def load_first_json_doc(text: str):
+    decoder = json.JSONDecoder()
+    idx = 0
+    n = len(text)
+    while idx < n and text[idx].isspace():
+        idx += 1
+    if idx >= n:
+        raise ValueError("empty JSON payload")
+    obj, end = decoder.raw_decode(text, idx)
+    trailing = text[end:].strip()
+    return obj, trailing
+
+
 def main() -> int:
     if len(sys.argv) != 5:
         raise SystemExit(
@@ -19,7 +32,11 @@ def main() -> int:
     if not src.is_file():
         raise SystemExit(f"input manifest not found: {src}")
 
-    data = json.loads(src.read_text(encoding="utf-8"))
+    raw = src.read_text(encoding="utf-8")
+    data, trailing = load_first_json_doc(raw)
+    if trailing:
+        # Canonicalize file if upstream accidentally appended extra JSON/content.
+        src.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     if not isinstance(data, dict):
         raise SystemExit("manifest root must be a JSON object")
 
