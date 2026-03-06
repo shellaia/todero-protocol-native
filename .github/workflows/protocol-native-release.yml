@@ -1020,9 +1020,24 @@ jobs:
           : "${BREW_TAP_TOKEN:?BREW_TAP_TOKEN is required}"
           tap_dir="$(mktemp -d)"
           trap 'rm -rf "${tap_dir}"' EXIT
-          git clone "https://x-access-token:${BREW_TAP_TOKEN}@github.com/${BREW_TAP_REPO}.git" "${tap_dir}" >/dev/null 2>&1
-          test -f "${tap_dir}/Formula/todero-native.rb"
-          diff -u dist/release/todero-native.rb "${tap_dir}/Formula/todero-native.rb"
+          if ! git clone "https://x-access-token:${BREW_TAP_TOKEN}@github.com/${BREW_TAP_REPO}.git" "${tap_dir}"; then
+            echo "Failed to clone brew tap repo. Check BREW_TAP_REPO and BREW_TAP_TOKEN permissions." >&2
+            exit 1
+          fi
+          if [[ ! -f dist/release/todero-native.rb ]]; then
+            echo "Generated formula missing: dist/release/todero-native.rb" >&2
+            exit 1
+          fi
+          if [[ ! -f "${tap_dir}/Formula/todero-native.rb" ]]; then
+            echo "Tap formula missing: ${tap_dir}/Formula/todero-native.rb" >&2
+            ls -la "${tap_dir}" >&2 || true
+            ls -la "${tap_dir}/Formula" >&2 || true
+            exit 1
+          fi
+          if ! diff -u dist/release/todero-native.rb "${tap_dir}/Formula/todero-native.rb"; then
+            echo "Tap formula differs from generated formula." >&2
+            exit 1
+          fi
 
       - name: Upload consolidated native artifacts
         uses: actions/upload-artifact@v4
