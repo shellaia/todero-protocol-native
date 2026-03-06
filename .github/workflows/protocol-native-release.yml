@@ -966,23 +966,7 @@ jobs:
           scripts/rollback_alias_repoint.sh --channel apt --bucket "${S3_BUCKET_APT}" --prefix "${PREFIX}" --version "${apt_ver}"
           scripts/rollback_alias_repoint.sh --channel yum --bucket "${S3_BUCKET_YUM}" --prefix "${PREFIX}" --version "${yum_ver}"
           scripts/rollback_alias_repoint.sh --channel brew --bucket "${S3_BUCKET_BREW}" --prefix "${PREFIX}" --version "${brew_ver}"
-
-          mkdir -p dist/release
-          cat > dist/release/cloudfront-invalidations-${VERSION}.json <<EOF
-          {
-            "version": "${VERSION}",
-            "prefix": "${PREFIX}",
-            "completedAtUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "invalidation": {
-              "apt": { "distributionId": "${CF_DIST_APT}", "id": "${apt_id}" },
-              "yum": { "distributionId": "${CF_DIST_YUM}", "id": "${yum_id}" },
-              "brew": { "distributionId": "${CF_DIST_BREW}", "id": "${brew_id}" }
-            }
-          }
-          EOF
-          echo "APT invalidation id: ${apt_id}"
-          echo "YUM invalidation id: ${yum_id}"
-          echo "BREW invalidation id: ${brew_id}"
+          echo "rollback dry-drill completed"
 
       - name: Publish Brew Tap formula
         if: startsWith(github.ref, 'refs/tags/v')
