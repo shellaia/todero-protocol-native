@@ -823,56 +823,11 @@ jobs:
             tmp_dir="$(mktemp -d)"
             file="${tmp_dir}/manifest.json"
             aws s3 cp "s3://${bucket}/${key}" "${file}" >/dev/null
-            python3 - "$file" "${VERSION}" "${expected_snapshot}" "${expected_alias}" <<'PY'
-            import json
-            import re
-            import sys
-            from pathlib import Path
-
-            manifest_path = Path(sys.argv[1])
-            version = sys.argv[2]
-            expected_snapshot = sys.argv[3]
-            expected_alias = sys.argv[4]
-
-            data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                raise SystemExit("bucket manifest root must be an object")
-            if not isinstance(data.get("releases"), list):
-                raise SystemExit("bucket manifest releases must be a list")
-
-            releases = data["releases"]
-            if not releases:
-                raise SystemExit("bucket manifest releases must not be empty")
-
-            iso_utc = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-            versions = []
-            for i, r in enumerate(releases):
-                if not isinstance(r, dict):
-                    raise SystemExit(f"releases[{i}] must be object")
-                for k in ("version", "publishedAt", "snapshot", "alias"):
-                    if not r.get(k):
-                        raise SystemExit(f"releases[{i}] missing {k}")
-                if not iso_utc.match(str(r["publishedAt"])):
-                    raise SystemExit(f"releases[{i}] invalid publishedAt format: {r['publishedAt']}")
-                versions.append(r["version"])
-
-            if len(set(versions)) != len(versions):
-                raise SystemExit("bucket manifest contains duplicate versions")
-
-            matching = [r for r in releases if r.get("version") == version]
-            if len(matching) != 1:
-                raise SystemExit(f"expected exactly one entry for current version={version}, found={len(matching)}")
-            cur = matching[0]
-            if cur["snapshot"] != expected_snapshot:
-                raise SystemExit(f"snapshot pointer mismatch: {cur['snapshot']} != {expected_snapshot}")
-            if cur["alias"] != expected_alias:
-                raise SystemExit(f"alias pointer mismatch: {cur['alias']} != {expected_alias}")
-
-            # Monotonic check: list must be sorted in descending publishedAt order.
-            times = [r["publishedAt"] for r in releases]
-            if times != sorted(times, reverse=True):
-                raise SystemExit("bucket manifest releases are not sorted by publishedAt desc")
-            PY
+            python3 scripts/validate_bucket_manifest.py \
+              "${file}" \
+              "${VERSION}" \
+              "${expected_snapshot}" \
+              "${expected_alias}"
             rm -rf "${tmp_dir}"
           }
 
@@ -999,23 +954,7 @@ jobs:
               rm -f "${tmp}"
               return
             fi
-            python3 - "$tmp" "$current" <<'PY'
-            import json
-            import sys
-            from pathlib import Path
-            manifest = Path(sys.argv[1])
-            current = sys.argv[2]
-            data = json.loads(manifest.read_text(encoding="utf-8"))
-            rels = data.get("releases", [])
-            if not isinstance(rels, list) or not rels:
-                print(current)
-                raise SystemExit(0)
-            for r in rels:
-                if isinstance(r, dict) and r.get("version") and r.get("version") != current:
-                    print(r["version"])
-                    raise SystemExit(0)
-            print(current)
-            PY
+            python3 scripts/select_rollback_version.py "$tmp" "$current"
             rm -f "${tmp}"
           }
 
