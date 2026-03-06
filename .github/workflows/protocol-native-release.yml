@@ -968,12 +968,22 @@ jobs:
           scripts/rollback_alias_repoint.sh --channel brew --bucket "${S3_BUCKET_BREW}" --prefix "${PREFIX}" --version "${brew_ver}"
           echo "rollback dry-drill completed"
 
+      - name: Create GitHub App token for Brew tap
+        id: brew_tap_app_token
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.BREW_TAP_APP_ID }}
+          private-key: ${{ secrets.BREW_TAP_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: homebrew-todero
+
       - name: Publish Brew Tap formula
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           BREW_TAP_REPO: ${{ vars.BREW_TAP_REPO }}
-          BREW_TAP_TOKEN: ${{ secrets.BREW_TAP_TOKEN }}
+          BREW_TAP_TOKEN: ${{ steps.brew_tap_app_token.outputs.token }}
         run: |
           set -euo pipefail
           : "${BREW_TAP_REPO:?BREW_TAP_REPO is required for tagged releases}"
@@ -1019,7 +1029,7 @@ jobs:
         shell: bash
         env:
           BREW_TAP_REPO: ${{ vars.BREW_TAP_REPO }}
-          BREW_TAP_TOKEN: ${{ secrets.BREW_TAP_TOKEN }}
+          BREW_TAP_TOKEN: ${{ steps.brew_tap_app_token.outputs.token }}
         run: |
           set -euo pipefail
           : "${BREW_TAP_REPO:?BREW_TAP_REPO is required}"
