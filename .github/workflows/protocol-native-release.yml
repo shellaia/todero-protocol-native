@@ -373,23 +373,19 @@ jobs:
             text = path.read_text(encoding="utf-8")
             decoder = json.JSONDecoder()
             idx = 0
-            docs = []
             n = len(text)
-            while idx < n:
-              while idx < n and text[idx].isspace():
-                idx += 1
-              if idx >= n:
-                break
-              obj, end = decoder.raw_decode(text, idx)
-              docs.append(obj)
-              idx = end
-            if not docs:
+            while idx < n and text[idx].isspace():
+              idx += 1
+            if idx >= n:
               raise SystemExit(f"manifest is empty: {path}")
-            if len(docs) > 1:
-              # Keep pipeline deterministic even if the file was accidentally concatenated.
-              print(f"warning: manifest contained {len(docs)} concatenated JSON documents; canonicalizing to first document")
-              path.write_text(json.dumps(docs[0], indent=2) + "\n", encoding="utf-8")
-            return docs[0]
+            obj, end = decoder.raw_decode(text, idx)
+            trailing = text[end:].strip()
+            if trailing:
+              # Keep pipeline deterministic even if the file was accidentally appended/concatenated.
+              preview = trailing[:120].replace("\n", "\\n")
+              print(f"warning: manifest contained trailing content after first JSON document; canonicalizing (trailing preview: {preview})")
+              path.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8")
+            return obj
 
           version = os.environ["VERSION"]
           release_dir = Path("dist/release")
