@@ -448,29 +448,25 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
           S3_PREFIX: ${{ secrets.S3_PREFIX }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           chmod +x scripts/generate_brew_formula.sh
-          base_url="https://${S3_BUCKET_BREW}.s3.${AWS_REGION}.amazonaws.com/${S3_PREFIX%/}"
+          base_url="https://brew.social100.com/${S3_PREFIX%/}"
           scripts/generate_brew_formula.sh "${VERSION}" "${base_url}" "dist/release"
 
       - name: Validate generated brew formula URL and checksum
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
           S3_PREFIX: ${{ secrets.S3_PREFIX }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           formula="dist/release/todero-native.rb"
           archive="dist/release/todero-native-darwin-aarch64-${VERSION}.tar.gz"
           test -f "${formula}"
           test -f "${archive}"
-          expected_url="https://${S3_BUCKET_BREW}.s3.${AWS_REGION}.amazonaws.com/${S3_PREFIX%/}/todero-native-darwin-aarch64-${VERSION}.tar.gz"
+          expected_url="https://brew.social100.com/${S3_PREFIX%/}/todero-native-darwin-aarch64-${VERSION}.tar.gz"
           if command -v sha256sum >/dev/null 2>&1; then
             expected_sha="$(sha256sum "${archive}" | awk '{print $1}')"
           else
