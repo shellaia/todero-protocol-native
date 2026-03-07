@@ -80,6 +80,7 @@ struct Registry {
 static REGISTRY: OnceLock<Mutex<Registry>> = OnceLock::new();
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 static PACKET_DEDUP: OnceLock<Mutex<HashMap<String, (u128, u32)>>> = OnceLock::new();
+static PROTO_LOG_ENABLED: OnceLock<bool> = OnceLock::new();
 
 fn registry() -> &'static Mutex<Registry> {
     REGISTRY.get_or_init(|| Mutex::new(Registry::default()))
@@ -91,6 +92,21 @@ fn cfg(msr_interval_ms: u64, miss_window_count: u64, disconnect_window_ms: u64) 
 
 fn now_ms() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+}
+
+fn parse_bool_env(name: &str) -> Option<bool> {
+    std::env::var(name).ok().map(|v| {
+        matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
+    })
+}
+
+fn proto_log_enabled() -> bool {
+    *PROTO_LOG_ENABLED.get_or_init(|| {
+        parse_bool_env("TODERO_V3_PROTO_ENABLED")
+            .or_else(|| parse_bool_env("TODERO_V3_PROTO_DEBUG"))
+            .or_else(|| parse_bool_env("V3PROTO_ENABLED"))
+            .unwrap_or(false)
+    })
 }
 
 fn packet_hash64(bytes: &[u8]) -> u64 {
@@ -128,6 +144,9 @@ fn dedup_note(
 }
 
 fn log_proto_packet(side: &str, dir: &str, path_id: u32, bytes: &[u8]) {
+    if !proto_log_enabled() {
+        return;
+    }
     let ts = now_ms();
     if is_dtls_packet(bytes) {
         let note = dedup_note(side, dir, path_id, "DTLS", 0, bytes, ts);
