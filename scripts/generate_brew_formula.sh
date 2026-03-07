@@ -44,7 +44,7 @@ class ToderoNative < Formula
     (bin/"tninfo").write <<~EOS
       #!/usr/bin/env bash
       set -euo pipefail
-      if [[ "\${1:-}" != "--libdir" ]]; then
+      if [[ -n "\${1:-}" && "\${1:-}" != "--libdir" ]]; then
         echo "usage: tninfo --libdir" >&2
         exit 2
       fi
