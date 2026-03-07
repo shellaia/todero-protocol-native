@@ -26,27 +26,27 @@ concurrency:
 jobs:
   build_native:
     name: Build native ${{ matrix.target_id }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJson(matrix.runner) }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target_id: linux-x86_64-gnu
-            runner: ubuntu-latest
+            runner: '["self-hosted","linux","x64","todero-amd64"]'
             lib_name: libv3_ffi.so
             os_family: linux
             arch: x86_64
             toolchain: gnu
             target_triple: x86_64-unknown-linux-gnu
           - target_id: linux-aarch64-gnu
-            runner: ubuntu-24.04-arm
+            runner: '["self-hosted","linux","ARM64","todero-arm64"]'
             lib_name: libv3_ffi.so
             os_family: linux
             arch: aarch64
             toolchain: gnu
             target_triple: aarch64-unknown-linux-gnu
           - target_id: darwin-aarch64
-            runner: macos-14
+            runner: '["self-hosted","macOS","ARM64","todero-macos-arm64"]'
             lib_name: libv3_ffi.dylib
             os_family: darwin
             arch: aarch64
@@ -196,7 +196,7 @@ jobs:
 
   publish_and_gate:
     name: Publish and gate Tier-1 coverage
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, todero-amd64]
     needs: build_native
 
     steps:
@@ -1097,7 +1097,7 @@ jobs:
 
   validate_brew_install:
     name: Validate brew tap install (arm mac)
-    runs-on: macos-14
+    runs-on: [self-hosted, macOS, ARM64, todero-macos-arm64]
     needs: publish_and_gate
     if: startsWith(github.ref, 'refs/tags/v')
     env:
