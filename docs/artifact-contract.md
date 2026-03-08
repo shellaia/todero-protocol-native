@@ -67,6 +67,19 @@ Each Linux package (`.deb`/`.rpm`) installs:
 - `/usr/lib/todero/native/<target-id>/metadata.json`
 - `/usr/lib/todero/native/current` (symlink)
 - `/usr/bin/tninfo --libdir` (prints `/usr/lib/todero/native/current`)
+- `/usr/lib/todero-native/profile-env-setup.sh` (startup profile helper)
+
+Installer lifecycle contract:
+- post-install applies startup snippets for:
+  - `~/.bashrc`
+  - `~/.zshrc`
+  - `~/.config/fish/conf.d/todero-native.fish`
+- snippets must be marker-managed and guarded:
+  - `# >>> todero-native >>>`
+  - `# <<< todero-native <<<`
+  - bash/zsh guard: `command -v tninfo >/dev/null 2>&1`
+  - fish guard: `type -q tninfo`
+- uninstall does not mutate profiles; it only prints manual cleanup guidance.
 
 ## Release Manifest Name
 
@@ -119,6 +132,10 @@ Published for brew channel:
 The formula URL points to the darwin arm64 archive under alias root:
 
 - `<base>/todero-native-darwin-aarch64-<version>.tar.gz`
+
+Formula install contract:
+- installs `tninfo` and `libexec/profile-env-setup.sh`
+- runs profile setup during `post_install` to apply guarded startup snippets.
 
 ## Backing Store Publication Paths
 

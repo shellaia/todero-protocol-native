@@ -7,9 +7,15 @@ OUT_DIR="${3:-dist/release}"
 
 archive="${OUT_DIR}/todero-native-darwin-aarch64-${VERSION}.tar.gz"
 formula="${OUT_DIR}/todero-native.rb"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+profile_setup_src="${script_dir}/install/profile_env_setup.sh"
 
 if [[ ! -f "${archive}" ]]; then
   echo "missing darwin archive for formula: ${archive}" >&2
+  exit 1
+fi
+if [[ ! -f "${profile_setup_src}" ]]; then
+  echo "missing profile setup helper: ${profile_setup_src}" >&2
   exit 1
 fi
 
@@ -20,6 +26,7 @@ else
 fi
 
 URL="${BASE_URL%/}/todero-native-darwin-aarch64-${VERSION}.tar.gz"
+PROFILE_SETUP_CONTENT="$(cat "${profile_setup_src}")"
 
 cat > "${formula}" <<EOF
 class ToderoNative < Formula
@@ -50,12 +57,25 @@ class ToderoNative < Formula
       fi
       echo "#{libexec}/native/current"
     EOS
+
+    (libexec/"profile-env-setup.sh").write <<~'EOS'
+${PROFILE_SETUP_CONTENT}
+    EOS
+    chmod 0755, libexec/"profile-env-setup.sh"
+  end
+
+  def post_install
+    system "bash", (libexec/"profile-env-setup.sh").to_s, "--apply"
   end
 
   def caveats
     <<~EOS
-      Set TODERO_V3_NATIVE_PATH to use this native runtime:
-        export TODERO_V3_NATIVE_PATH="#{libexec}/native/current"
+      TODERO_V3_NATIVE_PATH startup initialization is configured automatically
+      for bash, zsh, and fish using tninfo.
+
+      Open a new shell session to apply changes.
+      Manual fallback:
+        export TODERO_V3_NATIVE_PATH="\$(tninfo --libdir)"
     EOS
   end
 

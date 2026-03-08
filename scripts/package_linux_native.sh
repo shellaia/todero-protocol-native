@@ -42,10 +42,16 @@ mkdir -p "${OUT_DIR}/deb" "${OUT_DIR}/rpm"
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "${WORK_DIR}"' EXIT
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROFILE_SETUP_SRC="${SCRIPT_DIR}/install/profile_env_setup.sh"
+if [[ ! -x "${PROFILE_SETUP_SRC}" ]]; then
+  echo "missing or non-executable profile setup helper: ${PROFILE_SETUP_SRC}" >&2
+  exit 1
+fi
 
 ROOT="${WORK_DIR}/root"
 NATIVE_DIR="${ROOT}/usr/lib/todero/native/${TARGET_ID}"
-mkdir -p "${NATIVE_DIR}" "${ROOT}/usr/lib/todero/native" "${ROOT}/usr/bin" "${ROOT}/usr/share/doc/todero-native"
+mkdir -p "${NATIVE_DIR}" "${ROOT}/usr/lib/todero/native" "${ROOT}/usr/lib/todero-native" "${ROOT}/usr/bin" "${ROOT}/usr/share/doc/todero-native"
 
 install -m 0755 "${LIB_PATH}" "${NATIVE_DIR}/${LIB_NAME}"
 if [[ "${METADATA_PATH}" != "-" && -f "${METADATA_PATH}" ]]; then
@@ -63,6 +69,7 @@ fi
 echo "/usr/lib/todero/native/current"
 EOF
 chmod 0755 "${ROOT}/usr/bin/tninfo"
+install -m 0755 "${PROFILE_SETUP_SRC}" "${ROOT}/usr/lib/todero-native/profile-env-setup.sh"
 
 cat > "${ROOT}/usr/share/doc/todero-native/README.md" <<'EOF'
 Todero Protocol Native Runtime
@@ -71,6 +78,10 @@ Path resolver:
   tninfo --libdir
 
 Environment:
+  automatically configured on install via startup profile snippet
+  (bash, zsh, fish) with guarded tninfo resolution.
+
+Manual fallback:
   export TODERO_V3_NATIVE_PATH="$(tninfo --libdir)"
 EOF
 
@@ -87,6 +98,32 @@ Architecture: ${DEB_ARCH}
 Maintainer: Todero Team <security@shellaia.com>
 Description: Todero Protocol V3 native runtime library
 EOF
+cat > "${DEB_ROOT}/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+set -eu
+if [ -x /usr/lib/todero-native/profile-env-setup.sh ]; then
+  if /usr/lib/todero-native/profile-env-setup.sh --apply; then
+    echo "todero-native: TODERO_V3_NATIVE_PATH startup initialization was set."
+  else
+    echo "todero-native: unable to auto-configure startup profile; set manually:" >&2
+    echo '  export TODERO_V3_NATIVE_PATH="$(tninfo --libdir)"' >&2
+  fi
+else
+  echo "todero-native: profile setup helper missing; set manually:" >&2
+  echo '  export TODERO_V3_NATIVE_PATH="$(tninfo --libdir)"' >&2
+fi
+exit 0
+EOF
+chmod 0755 "${DEB_ROOT}/DEBIAN/postinst"
+cat > "${DEB_ROOT}/DEBIAN/postrm" <<'EOF'
+#!/bin/sh
+set -eu
+if [ -x /usr/lib/todero-native/profile-env-setup.sh ]; then
+  /usr/lib/todero-native/profile-env-setup.sh --print-cleanup || true
+fi
+exit 0
+EOF
+chmod 0755 "${DEB_ROOT}/DEBIAN/postrm"
 dpkg-deb --build --root-owner-group "${DEB_ROOT}" "${OUT_DIR}/deb/todero-native_${VERSION}_${DEB_ARCH}.deb"
 
 # Build .rpm package
@@ -116,8 +153,24 @@ tar -xzf %{SOURCE0}
 mkdir -p %{buildroot}
 cp -a . %{buildroot}/
 
+%post
+if [ -x /usr/lib/todero-native/profile-env-setup.sh ]; then
+  if /usr/lib/todero-native/profile-env-setup.sh --apply; then
+    echo "todero-native: TODERO_V3_NATIVE_PATH startup initialization was set."
+  else
+    echo "todero-native: unable to auto-configure startup profile; set manually:" >&2
+    echo '  export TODERO_V3_NATIVE_PATH="$(tninfo --libdir)"' >&2
+  fi
+fi
+
+%postun
+if [ -x /usr/lib/todero-native/profile-env-setup.sh ]; then
+  /usr/lib/todero-native/profile-env-setup.sh --print-cleanup || true
+fi
+
 %files
 /usr/bin/tninfo
+/usr/lib/todero-native/profile-env-setup.sh
 /usr/lib/todero/native
 /usr/share/doc/todero-native/README.md
 EOF

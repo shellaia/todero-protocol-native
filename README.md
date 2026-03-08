@@ -94,6 +94,18 @@ After install, resolve native path with:
 
 ```bash
 tninfo --libdir
+```
+
+`todero-native` install automatically manages guarded startup snippets for:
+- `~/.bashrc`
+- `~/.zshrc`
+- `~/.config/fish/conf.d/todero-native.fish`
+
+The snippet resolves `TODERO_V3_NATIVE_PATH` from `tninfo` only when `tninfo` exists,
+so shell startup does not warn after uninstall.
+
+Manual fallback:
+```bash
 export TODERO_V3_NATIVE_PATH="$(tninfo --libdir)"
 ```
 
@@ -111,6 +123,8 @@ All Linux packages install:
 - native library under `/usr/lib/todero/native/<target-id>/`
 - symlink `/usr/lib/todero/native/current`
 - resolver command `/usr/bin/tninfo --libdir`
+- profile helper `/usr/lib/todero-native/profile-env-setup.sh`
+- guarded startup snippets for bash/zsh/fish with `tninfo` path resolution
 
 For canonical S3 snapshot/alias path layout, see `docs/artifact-contract.md` (single source of truth).
 
