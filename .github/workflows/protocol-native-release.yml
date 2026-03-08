@@ -15,6 +15,19 @@ on:
         required: false
         default: false
         type: boolean
+      validation_mode:
+        description: 'Alias/history validator mode: gate (fast) or full (all versions).'
+        required: false
+        default: gate
+        type: choice
+        options:
+          - gate
+          - full
+      validation_history_limit:
+        description: 'History depth for gate/full validator (0 means all; gate defaults to 5 when omitted).'
+        required: false
+        default: '5'
+        type: string
 
 permissions:
   contents: write
@@ -909,15 +922,21 @@ jobs:
           S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
           S3_PREFIX: ${{ secrets.S3_PREFIX }}
           VERSION: ${{ steps.meta.outputs.version }}
+          VALIDATION_MODE: ${{ inputs.validation_mode }}
+          VALIDATION_HISTORY_LIMIT: ${{ inputs.validation_history_limit }}
         run: |
           set -euo pipefail
+          mode="${VALIDATION_MODE:-gate}"
+          limit="${VALIDATION_HISTORY_LIMIT:-5}"
           chmod +x scripts/validate_alias_and_history.py
           python3 scripts/validate_alias_and_history.py \
             --bucket-apt "${S3_BUCKET_APT}" \
             --bucket-yum "${S3_BUCKET_YUM}" \
             --bucket-brew "${S3_BUCKET_BREW}" \
             --prefix "${S3_PREFIX%/}" \
-            --current-version "${VERSION}"
+            --current-version "${VERSION}" \
+            --mode "${mode}" \
+            --history-limit "${limit}"
 
       - name: Invalidate CloudFront metadata paths
         shell: bash

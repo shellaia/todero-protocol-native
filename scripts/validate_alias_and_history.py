@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -27,6 +28,20 @@ class ValidationError:
             ctx = " ".join(f"{k}={v}" for k, v in self.context.items())
             parts.append(f"| {ctx}")
         return " ".join(parts)
+
+
+@dataclass
+class Metrics:
+    aws_list_calls: int = 0
+    aws_download_calls: int = 0
+    bytes_downloaded: int = 0
+
+    def add_download(self, size: int) -> None:
+        self.aws_download_calls += 1
+        self.bytes_downloaded += max(size, 0)
+
+
+METRICS = Metrics()
 
 
 def _run(cmd: Sequence[str]) -> str:
@@ -61,11 +76,48 @@ def _head_object(bucket: str, key: str) -> None:
 
 def _get_text(bucket: str, key: str) -> str:
     out = _run_bytes(["aws", "s3", "cp", _s3_uri(bucket, key), "-"])
+    METRICS.add_download(len(out))
     return out.decode("utf-8")
 
 
 def _get_bytes(bucket: str, key: str) -> bytes:
-    return _run_bytes(["aws", "s3", "cp", _s3_uri(bucket, key), "-"])
+    out = _run_bytes(["aws", "s3", "cp", _s3_uri(bucket, key), "-"])
+    METRICS.add_download(len(out))
+    return out
+
+
+def _list_keys(bucket: str, prefix: str) -> Set[str]:
+    keys: Set[str] = set()
+    token: Optional[str] = None
+    while True:
+        cmd = [
+            "aws",
+            "s3api",
+            "list-objects-v2",
+            "--bucket",
+            bucket,
+            "--prefix",
+            prefix,
+            "--max-keys",
+            "1000",
+            "--output",
+            "json",
+        ]
+        if token:
+            cmd.extend(["--continuation-token", token])
+        raw = _run(cmd)
+        METRICS.aws_list_calls += 1
+        data = json.loads(raw)
+        for obj in data.get("Contents", []) or []:
+            key = obj.get("Key")
+            if isinstance(key, str):
+                keys.add(key)
+        if not data.get("IsTruncated"):
+            break
+        token = data.get("NextContinuationToken")
+        if not token:
+            break
+    return keys
 
 
 def _parse_packages_versions(text: str, package_name: str) -> Set[str]:
@@ -358,7 +410,18 @@ def _validate_apt_snapshot_versions(
 ) -> None:
     for version in versions:
         base = _join(prefix, "releases", version)
-        for key in (
+        try:
+            keys = _list_keys(bucket, _join(base, ""))
+        except Exception as exc:
+            errors.append(
+                ValidationError(
+                    "APT_SNAPSHOT_LIST_FAILED",
+                    "failed listing apt snapshot prefix",
+                    {"version": version, "prefix": base, "error": str(exc)},
+                )
+            )
+            continue
+        required_keys = (
             _join(base, "dists", "stable", "InRelease"),
             _join(base, "dists", "stable", "Release"),
             _join(base, "dists", "stable", "Release.gpg"),
@@ -366,31 +429,16 @@ def _validate_apt_snapshot_versions(
             _join(base, "dists", "stable", "main", "binary-amd64", "Packages.gz"),
             _join(base, "dists", "stable", "main", "binary-arm64", "Packages"),
             _join(base, "dists", "stable", "main", "binary-arm64", "Packages.gz"),
-        ):
-            try:
-                _head_object(bucket, key)
-            except Exception as exc:
+            _join(base, "pool", "main", "t", "todero-native", f"todero-native_{version}_amd64.deb"),
+            _join(base, "pool", "main", "t", "todero-native", f"todero-native_{version}_arm64.deb"),
+        )
+        for key in required_keys:
+            if key not in keys:
                 errors.append(
                     ValidationError(
                         "APT_SNAPSHOT_OBJECT_MISSING",
                         "required apt snapshot object missing",
-                        {"version": version, "key": key, "error": str(exc)},
-                    )
-                )
-
-        for deb_name in (
-            f"todero-native_{version}_amd64.deb",
-            f"todero-native_{version}_arm64.deb",
-        ):
-            key = _join(base, "pool", "main", "t", "todero-native", deb_name)
-            try:
-                _head_object(bucket, key)
-            except Exception as exc:
-                errors.append(
-                    ValidationError(
-                        "APT_SNAPSHOT_DEB_MISSING",
-                        "apt snapshot missing expected deb package",
-                        {"version": version, "key": key, "error": str(exc)},
+                        {"version": version, "key": key},
                     )
                 )
 
@@ -437,7 +485,27 @@ def _validate_yum_snapshot_versions(
 ) -> None:
     for version in versions:
         base = _join(prefix, "releases", version)
+        try:
+            keys = _list_keys(bucket, _join(base, ""))
+        except Exception as exc:
+            errors.append(
+                ValidationError(
+                    "YUM_SNAPSHOT_LIST_FAILED",
+                    "failed listing yum snapshot prefix",
+                    {"version": version, "prefix": base, "error": str(exc)},
+                )
+            )
+            continue
         repomd_key = _join(base, "repodata", "repomd.xml")
+        if repomd_key not in keys:
+            errors.append(
+                ValidationError(
+                    "YUM_REPOMD_MISSING",
+                    "yum snapshot repomd.xml missing/unreadable",
+                    {"version": version, "key": repomd_key},
+                )
+            )
+            continue
         try:
             repomd = _get_text(bucket, repomd_key)
         except Exception as exc:
@@ -511,14 +579,12 @@ def _validate_yum_snapshot_versions(
             f"todero-native-{version}-1.aarch64.rpm",
         ):
             key = _join(base, "packages", rpm)
-            try:
-                _head_object(bucket, key)
-            except Exception as exc:
+            if key not in keys:
                 errors.append(
                     ValidationError(
                         "YUM_SNAPSHOT_RPM_MISSING",
                         "yum snapshot missing expected rpm package",
-                        {"version": version, "key": key, "error": str(exc)},
+                        {"version": version, "key": key},
                     )
                 )
 
@@ -629,6 +695,7 @@ def _manifest_versions_or_error(
 
 
 def main() -> int:
+    started = time.monotonic()
     parser = argparse.ArgumentParser(
         description="Validate alias-current and historical installability invariants."
     )
@@ -637,6 +704,12 @@ def main() -> int:
     parser.add_argument("--bucket-brew", required=True)
     parser.add_argument("--prefix", required=True, help="S3_PREFIX value")
     parser.add_argument("--current-version", required=True, help="Current release version (no leading v)")
+    parser.add_argument(
+        "--mode",
+        choices=("gate", "full"),
+        default="gate",
+        help="gate validates alias + bounded history; full validates all history",
+    )
     parser.add_argument("--history-limit", type=int, default=0, help="Optional cap of versions validated per channel (0=all)")
     args = parser.parse_args()
 
@@ -653,6 +726,8 @@ def main() -> int:
     yum_versions = _manifest_versions_or_error(errors, args.bucket_yum, prefix)
     brew_versions = _manifest_versions_or_error(errors, args.bucket_brew, prefix)
 
+    if args.mode == "gate" and args.history_limit <= 0:
+        args.history_limit = 5
     if args.history_limit > 0:
         apt_versions = apt_versions[: args.history_limit]
         yum_versions = yum_versions[: args.history_limit]
@@ -665,12 +740,27 @@ def main() -> int:
     if errors:
         for err in errors:
             print(err.render(), file=sys.stderr)
+        elapsed = time.monotonic() - started
+        print(
+            "validation_metrics "
+            f"elapsed_s={elapsed:.2f} "
+            f"mode={args.mode} "
+            f"history_limit={args.history_limit} "
+            f"aws_list_calls={METRICS.aws_list_calls} "
+            f"aws_download_calls={METRICS.aws_download_calls} "
+            f"bytes_downloaded={METRICS.bytes_downloaded}",
+            file=sys.stderr,
+        )
         print(f"validation_failed count={len(errors)}", file=sys.stderr)
         return 1
 
+    elapsed = time.monotonic() - started
     print(
         "validation_passed "
-        f"apt_versions={len(apt_versions)} yum_versions={len(yum_versions)} brew_versions={len(brew_versions)}"
+        f"apt_versions={len(apt_versions)} yum_versions={len(yum_versions)} brew_versions={len(brew_versions)} "
+        f"mode={args.mode} history_limit={args.history_limit} "
+        f"elapsed_s={elapsed:.2f} aws_list_calls={METRICS.aws_list_calls} "
+        f"aws_download_calls={METRICS.aws_download_calls} bytes_downloaded={METRICS.bytes_downloaded}"
     )
     return 0
 
