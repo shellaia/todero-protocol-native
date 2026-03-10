@@ -11,7 +11,6 @@ CRATE_NAME="v3-ffi"
 HEADERS_DIR="${OUT_ROOT}/headers"
 DEVICE_DIR="${OUT_ROOT}/iphoneos"
 SIM_DIR="${OUT_ROOT}/iphonesimulator"
-XCFRAMEWORK_PATH="${OUT_ROOT}/v3_ffi.xcframework"
 
 mkdir -p "${HEADERS_DIR}" "${DEVICE_DIR}" "${SIM_DIR}"
 
@@ -25,11 +24,16 @@ require_target() {
 
 build_target() {
   local rust_target="$1"
-  cargo build \
+  # v3-ffi defines multiple crate-types. For iOS packaging we only need the
+  # staticlib output (libv3_ffi.a). Building cdylib can fail on iOS toolchains.
+  cargo rustc \
     --manifest-path "${WORKSPACE_MANIFEST}" \
     -p "${CRATE_NAME}" \
     --release \
-    --target "${rust_target}"
+    --target "${rust_target}" \
+    --lib \
+    -- \
+    --crate-type staticlib
 }
 
 cat > "${HEADERS_DIR}/v3_ffi.h" <<'EOF'
@@ -60,26 +64,20 @@ EOF
 
 require_target "aarch64-apple-ios"
 require_target "aarch64-apple-ios-sim"
-require_target "x86_64-apple-ios"
+
+# Keep deployment target consistent across dependencies (notably openssl-sys).
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-12.0}"
 
 build_target "aarch64-apple-ios"
 build_target "aarch64-apple-ios-sim"
-build_target "x86_64-apple-ios"
 
 cp -f \
   "${REPO_ROOT}/target/aarch64-apple-ios/release/libv3_ffi.a" \
   "${DEVICE_DIR}/libv3_ffi.a"
 
-lipo -create \
+cp -f \
   "${REPO_ROOT}/target/aarch64-apple-ios-sim/release/libv3_ffi.a" \
-  "${REPO_ROOT}/target/x86_64-apple-ios/release/libv3_ffi.a" \
-  -output "${SIM_DIR}/libv3_ffi.a"
-
-rm -rf "${XCFRAMEWORK_PATH}"
-xcodebuild -create-xcframework \
-  -library "${DEVICE_DIR}/libv3_ffi.a" -headers "${HEADERS_DIR}" \
-  -library "${SIM_DIR}/libv3_ffi.a" -headers "${HEADERS_DIR}" \
-  -output "${XCFRAMEWORK_PATH}" >/dev/null
+  "${SIM_DIR}/libv3_ffi.a"
 
 cat > "${OUT_ROOT}/metadata.json" <<EOF
 {
@@ -89,9 +87,7 @@ cat > "${OUT_ROOT}/metadata.json" <<EOF
   "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "artifacts": {
     "device": "iphoneos/libv3_ffi.a",
-    "simulator": "iphonesimulator/libv3_ffi.a",
-    "xcframework": "v3_ffi.xcframework",
-  "spm_zip": "v3_ffi.xcframework.zip"
+    "simulator_arm64": "iphonesimulator/libv3_ffi.a"
   }
 }
 EOF

@@ -91,7 +91,9 @@ jobs:
         run: rustup target add x86_64-apple-ios
       - name: Build x64 simulator slice
         run: |
-          cargo build --manifest-path Cargo.toml -p v3-ffi --release --target x86_64-apple-ios
+          # v3-ffi defines multiple crate-types; for iOS packaging we only need staticlib.
+          export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-12.0}"
+          cargo rustc --manifest-path Cargo.toml -p v3-ffi --release --target x86_64-apple-ios --lib -- --crate-type staticlib
           mkdir -p dist/mobile-ios-x64/iphonesimulator
           cp target/x86_64-apple-ios/release/libv3_ffi.a dist/mobile-ios-x64/iphonesimulator/libv3_ffi.a
       - name: Upload iOS x64 simulator artifact
