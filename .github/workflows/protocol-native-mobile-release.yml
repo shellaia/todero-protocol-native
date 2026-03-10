@@ -209,9 +209,13 @@ jobs:
           set -euo pipefail
           rm -rf android-aar/src/main/jniLibs
           mkdir -p android-aar/src/main
-          # The downloaded artifact keeps its original dist structure:
-          # dist/mobile/<version>/android/jniLibs
-          cp -R dist/mobile-release/android/dist/mobile/*/android/jniLibs android-aar/src/main/jniLibs
+          src_jni="$(find dist/mobile-release/android -maxdepth 8 -type d -name jniLibs -print -quit || true)"
+          if [[ -z "${src_jni}" ]]; then
+            echo "error: jniLibs not found under dist/mobile-release/android" >&2
+            find dist/mobile-release/android -maxdepth 5 -print >&2 || true
+            exit 1
+          fi
+          cp -R "${src_jni}" android-aar/src/main/jniLibs
       - name: Validate Android AAR inputs
         shell: bash
         run: |
@@ -241,9 +245,23 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.resolve_meta.outputs.version }}"
           test -f "dist/mobile-release/v3_ffi.xcframework.zip"
-          test -f "dist/mobile-release/android/todero-native-mobile-android-${VERSION}.zip"
+          # Normalize Android artifact paths because upload/download preserves the original dist tree.
+          android_zip="$(find dist/mobile-release -name "todero-native-mobile-android-${VERSION}.zip" -print -quit || true)"
+          if [[ -z "${android_zip}" ]]; then
+            echo "error: Android mobile zip not found for version ${VERSION}" >&2
+            find dist/mobile-release -maxdepth 5 -print >&2 || true
+            exit 1
+          fi
           test -f "dist/mobile-release/metadata.json"
-          test -f "dist/mobile-release/android/metadata.json"
+          android_meta="$(find dist/mobile-release -path "*/android/metadata.json" -print -quit || true)"
+          if [[ -z "${android_meta}" ]]; then
+            echo "error: Android metadata.json not found under dist/mobile-release" >&2
+            find dist/mobile-release -maxdepth 5 -print >&2 || true
+            exit 1
+          fi
+          mkdir -p "dist/mobile-release/android"
+          cp -f "${android_zip}" "dist/mobile-release/android/todero-native-mobile-android-${VERSION}.zip"
+          cp -f "${android_meta}" "dist/mobile-release/android/metadata.json"
           cp "dist/mobile-release/metadata.json" "dist/mobile-release/todero-native-mobile-ios-metadata-${VERSION}.json"
           cp "dist/mobile-release/android/metadata.json" "dist/mobile-release/todero-native-mobile-android-metadata-${VERSION}.json"
       - name: Publish GitHub release assets
