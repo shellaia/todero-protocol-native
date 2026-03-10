@@ -9,22 +9,24 @@ val publishVersion = providers.environmentVariable("TODERO_ANDROID_PUBLISH_VERSI
     .orElse(providers.gradleProperty("VERSION_NAME"))
     .orElse("0.0.0-dev")
 
-val compileSdkVersion = providers.environmentVariable("ANDROID_COMPILE_SDK")
+val androidCompileSdk = providers.environmentVariable("ANDROID_COMPILE_SDK")
     .orElse("34")
     .map(String::toInt)
-val minSdkVersion = providers.environmentVariable("ANDROID_MIN_SDK")
+    .get()
+val androidMinSdk = providers.environmentVariable("ANDROID_MIN_SDK")
     .orElse("21")
     .map(String::toInt)
+    .get()
 
 version = publishVersion.get()
 group = providers.gradleProperty("GROUP").get()
 
 android {
     namespace = "com.shellaia.todero.v3ffi"
-    compileSdk = compileSdkVersion.get()
+    compileSdk = androidCompileSdk
 
     defaultConfig {
-        minSdk = minSdkVersion.get()
+        minSdk = androidMinSdk
         consumerProguardFiles("consumer-rules.pro")
     }
 
