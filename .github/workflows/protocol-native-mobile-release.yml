@@ -115,7 +115,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: mobile-ios-x64
-          path: dist/mobile-ios-x64
+          # The x64 artifact is uploaded as a single file; download it directly
+          # into the expected directory for lipo.
+          path: dist/mobile-ios-x64/iphonesimulator
       - name: Assemble xcframework
         shell: bash
         run: |
