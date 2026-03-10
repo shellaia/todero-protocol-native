@@ -45,14 +45,17 @@ build_abi() {
   local rust_target="$2"
   local clang_prefix="$3"
   local lib_dir="${OUT_ROOT}/jniLibs/${abi}"
+  local symbols_dir="${OUT_ROOT}/symbols/${abi}"
 
-  mkdir -p "${lib_dir}"
+  mkdir -p "${lib_dir}" "${symbols_dir}"
   require_target "${rust_target}"
 
   local cc="${TOOLCHAIN}/${clang_prefix}${MIN_SDK}-clang"
   local cxx="${TOOLCHAIN}/${clang_prefix}${MIN_SDK}-clang++"
   local ar="${TOOLCHAIN}/llvm-ar"
   local ranlib="${TOOLCHAIN}/llvm-ranlib"
+  local strip_bin="${TOOLCHAIN}/llvm-strip"
+  local objcopy_bin="${TOOLCHAIN}/llvm-objcopy"
   local target_upper
   target_upper="$(printf '%s' "${rust_target}" | tr '[:lower:]-' '[:upper:]_')"
 
@@ -80,13 +83,18 @@ build_abi() {
     --release \
     --target "${rust_target}"
 
-  cp -f \
-    "${REPO_ROOT}/target/${rust_target}/release/libv3_ffi.so" \
-    "${lib_dir}/libv3_ffi.so"
+  local built_so="${REPO_ROOT}/target/${rust_target}/release/libv3_ffi.so"
+  local shipped_so="${lib_dir}/libv3_ffi.so"
+  local debug_so="${symbols_dir}/libv3_ffi.so.debug"
+
+  cp -f "${built_so}" "${shipped_so}"
+  "${objcopy_bin}" --only-keep-debug "${built_so}" "${debug_so}"
+  "${strip_bin}" --strip-debug --strip-unneeded "${shipped_so}"
+  "${objcopy_bin}" --add-gnu-debuglink="${debug_so}" "${shipped_so}" || true
 }
 
-rm -rf "${OUT_ROOT}/jniLibs"
-mkdir -p "${OUT_ROOT}/jniLibs"
+rm -rf "${OUT_ROOT}/jniLibs" "${OUT_ROOT}/symbols"
+mkdir -p "${OUT_ROOT}/jniLibs" "${OUT_ROOT}/symbols"
 
 build_abi "arm64-v8a" "aarch64-linux-android" "aarch64-linux-android"
 build_abi "x86_64" "x86_64-linux-android" "x86_64-linux-android"
@@ -94,6 +102,7 @@ build_abi "x86_64" "x86_64-linux-android" "x86_64-linux-android"
 (
   cd "${OUT_ROOT}"
   zip -qr "todero-native-mobile-android-${VERSION}.zip" jniLibs
+  zip -qr "todero-native-mobile-android-symbols-${VERSION}.zip" symbols
 )
 
 cat > "${OUT_ROOT}/metadata.json" <<EOF
@@ -104,7 +113,9 @@ cat > "${OUT_ROOT}/metadata.json" <<EOF
   "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "artifacts": {
     "jniLibs": "jniLibs",
-    "archive": "todero-native-mobile-android-${VERSION}.zip"
+    "archive": "todero-native-mobile-android-${VERSION}.zip",
+    "symbols": "symbols",
+    "symbols_archive": "todero-native-mobile-android-symbols-${VERSION}.zip"
   }
 }
 EOF

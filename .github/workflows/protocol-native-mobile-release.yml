@@ -252,6 +252,12 @@ jobs:
             find dist/mobile-release -maxdepth 5 -print >&2 || true
             exit 1
           fi
+          android_symbols_zip="$(find dist/mobile-release -name "todero-native-mobile-android-symbols-${VERSION}.zip" -print -quit || true)"
+          if [[ -z "${android_symbols_zip}" ]]; then
+            echo "error: Android mobile symbols zip not found for version ${VERSION}" >&2
+            find dist/mobile-release -maxdepth 5 -print >&2 || true
+            exit 1
+          fi
           test -f "dist/mobile-release/metadata.json"
           android_meta="$(find dist/mobile-release -path "*/android/metadata.json" -print -quit || true)"
           if [[ -z "${android_meta}" ]]; then

@@ -38,12 +38,23 @@ Required mobile outputs:
 - Android:
   - `android/jniLibs/arm64-v8a/libv3_ffi.so`
   - `android/jniLibs/x86_64/libv3_ffi.so`
+  - `android/symbols/arm64-v8a/libv3_ffi.so.debug`
+  - `android/symbols/x86_64/libv3_ffi.so.debug`
   - `android/todero-native-mobile-android-<version>.zip`
+  - `android/todero-native-mobile-android-symbols-<version>.zip`
   - `android/metadata.json`
   - published release metadata asset:
     - `todero-native-mobile-android-metadata-<version>.json`
+  - published release symbols asset:
+    - `todero-native-mobile-android-symbols-<version>.zip`
   - published Maven Central artifact:
     - `com.shellaia.todero:todero-v3-ffi-android:<version>`
+
+Android symbol policy:
+
+- shipped `jniLibs/*.so` artifacts are stripped for release size
+- debug symbols are preserved separately under `android/symbols/`
+- the Maven Central AAR packages stripped runtime libraries only
 
 Per tarball checksum:
 
