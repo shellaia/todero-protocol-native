@@ -244,31 +244,34 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ needs.resolve_meta.outputs.version }}"
-          test -f "dist/mobile-release/v3_ffi.xcframework.zip"
-          # Normalize Android artifact paths because upload/download preserves the original dist tree.
+          echo "Preparing mobile release assets for version ${VERSION}"
+          echo "Downloaded artifact tree:"
+          find dist/mobile-release -maxdepth 5 -type f | sort || true
+
+          ios_zip="$(find dist/mobile-release -name "v3_ffi.xcframework.zip" -print -quit || true)"
+          ios_meta="$(find dist/mobile-release -path "*/ios/metadata.json" -print -quit || true)"
           android_zip="$(find dist/mobile-release -name "todero-native-mobile-android-${VERSION}.zip" -print -quit || true)"
-          if [[ -z "${android_zip}" ]]; then
-            echo "error: Android mobile zip not found for version ${VERSION}" >&2
-            find dist/mobile-release -maxdepth 5 -print >&2 || true
-            exit 1
-          fi
           android_symbols_zip="$(find dist/mobile-release -name "todero-native-mobile-android-symbols-${VERSION}.zip" -print -quit || true)"
-          if [[ -z "${android_symbols_zip}" ]]; then
-            echo "error: Android mobile symbols zip not found for version ${VERSION}" >&2
-            find dist/mobile-release -maxdepth 5 -print >&2 || true
-            exit 1
-          fi
-          test -f "dist/mobile-release/metadata.json"
           android_meta="$(find dist/mobile-release -path "*/android/metadata.json" -print -quit || true)"
-          if [[ -z "${android_meta}" ]]; then
-            echo "error: Android metadata.json not found under dist/mobile-release" >&2
-            find dist/mobile-release -maxdepth 5 -print >&2 || true
+
+          echo "Resolved iOS zip: ${ios_zip:-<missing>}"
+          echo "Resolved iOS metadata: ${ios_meta:-<missing>}"
+          echo "Resolved Android zip: ${android_zip:-<missing>}"
+          echo "Resolved Android symbols zip: ${android_symbols_zip:-<missing>}"
+          echo "Resolved Android metadata: ${android_meta:-<missing>}"
+
+          if [[ -z "${ios_zip}" || -z "${ios_meta}" || -z "${android_zip}" || -z "${android_symbols_zip}" || -z "${android_meta}" ]]; then
+            echo "error: one or more required mobile release assets are missing" >&2
+            find dist/mobile-release -maxdepth 5 -type f | sort >&2 || true
             exit 1
           fi
+
           mkdir -p "dist/mobile-release/android"
+          cp -f "${ios_zip}" "dist/mobile-release/v3_ffi.xcframework.zip"
           cp -f "${android_zip}" "dist/mobile-release/android/todero-native-mobile-android-${VERSION}.zip"
+          cp -f "${android_symbols_zip}" "dist/mobile-release/android/todero-native-mobile-android-symbols-${VERSION}.zip"
           cp -f "${android_meta}" "dist/mobile-release/android/metadata.json"
-          cp "dist/mobile-release/metadata.json" "dist/mobile-release/todero-native-mobile-ios-metadata-${VERSION}.json"
+          cp -f "${ios_meta}" "dist/mobile-release/todero-native-mobile-ios-metadata-${VERSION}.json"
           cp "dist/mobile-release/android/metadata.json" "dist/mobile-release/todero-native-mobile-android-metadata-${VERSION}.json"
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
@@ -277,5 +280,6 @@ jobs:
           files: |
             dist/mobile-release/v3_ffi.xcframework.zip
             dist/mobile-release/android/todero-native-mobile-android-${{ needs.resolve_meta.outputs.version }}.zip
+            dist/mobile-release/android/todero-native-mobile-android-symbols-${{ needs.resolve_meta.outputs.version }}.zip
             dist/mobile-release/todero-native-mobile-ios-metadata-${{ needs.resolve_meta.outputs.version }}.json
             dist/mobile-release/todero-native-mobile-android-metadata-${{ needs.resolve_meta.outputs.version }}.json
