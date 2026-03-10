@@ -209,7 +209,9 @@ jobs:
           set -euo pipefail
           rm -rf android-aar/src/main/jniLibs
           mkdir -p android-aar/src/main
-          cp -R dist/mobile-release/android/jniLibs android-aar/src/main/jniLibs
+          # The downloaded artifact keeps its original dist structure:
+          # dist/mobile/<version>/android/jniLibs
+          cp -R dist/mobile-release/android/dist/mobile/*/android/jniLibs android-aar/src/main/jniLibs
       - name: Validate Android AAR inputs
         shell: bash
         run: |
