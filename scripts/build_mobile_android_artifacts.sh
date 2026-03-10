@@ -49,12 +49,30 @@ build_abi() {
   mkdir -p "${lib_dir}"
   require_target "${rust_target}"
 
-  local linker="${TOOLCHAIN}/${clang_prefix}${MIN_SDK}-clang"
+  local cc="${TOOLCHAIN}/${clang_prefix}${MIN_SDK}-clang"
+  local cxx="${TOOLCHAIN}/${clang_prefix}${MIN_SDK}-clang++"
   local ar="${TOOLCHAIN}/llvm-ar"
+  local ranlib="${TOOLCHAIN}/llvm-ranlib"
   local target_upper
   target_upper="$(printf '%s' "${rust_target}" | tr '[:lower:]-' '[:upper:]_')"
-  export "CARGO_TARGET_${target_upper}_LINKER=${linker}"
+
+  # Ensure native deps (openssl-sys) use the NDK toolchain rather than trying to
+  # call non-existent unversioned wrappers like `aarch64-linux-android-clang`.
+  export PATH="${TOOLCHAIN}:${PATH}"
+  export CC="${cc}"
+  export CXX="${cxx}"
   export AR="${ar}"
+  export RANLIB="${ranlib}"
+
+  # Target-specific overrides used by cc-rs.
+  local rust_target_env
+  rust_target_env="$(printf '%s' "${rust_target}" | tr '[:lower:]-' '[:lower:]_')"
+  export "CC_${rust_target_env}=${cc}"
+  export "CXX_${rust_target_env}=${cxx}"
+  export "AR_${rust_target_env}=${ar}"
+
+  # Rust linker for this target.
+  export "CARGO_TARGET_${target_upper}_LINKER=${cc}"
 
   cargo build \
     --manifest-path "${WORKSPACE_MANIFEST}" \
