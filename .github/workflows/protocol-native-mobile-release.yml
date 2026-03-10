@@ -1,0 +1,245 @@
+name: Protocol Native Mobile Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional tag to publish/build for (vX.Y.Z). If empty, builds only.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  resolve_meta:
+    name: Resolve mobile release metadata
+    runs-on: [self-hosted, linux, x64, todero-amd64]
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      should_publish: ${{ steps.meta.outputs.should_publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=""
+          VERSION=""
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG#v}"
+          elif [[ -n "${{ inputs.release_tag }}" ]]; then
+            TAG="${{ inputs.release_tag }}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="$(tr -d '[:space:]' < version.txt)"
+          fi
+          SHOULD_PUBLISH="false"
+          if [[ -n "${TAG}" ]]; then
+            SHOULD_PUBLISH="true"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "should_publish=${SHOULD_PUBLISH}" >> "$GITHUB_OUTPUT"
+
+  build_ios_arm:
+    name: Build iOS device + arm64 sim
+    needs: resolve_meta
+    runs-on: [self-hosted, macOS, ARM64, todero-macos-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Apple Rust targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - name: Build iOS arm slices
+        env:
+          MOBILE_VERSION: ${{ needs.resolve_meta.outputs.version }}
+          MOBILE_OUT_DIR: ${{ github.workspace }}/dist/mobile-ios-arm
+        run: |
+          chmod +x scripts/build_mobile_ios_artifacts.sh
+          scripts/build_mobile_ios_artifacts.sh
+      - name: Upload iOS arm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ios-arm
+          path: |
+            dist/mobile-ios-arm/iphoneos/libv3_ffi.a
+            dist/mobile-ios-arm/iphonesimulator/libv3_ffi.a
+            dist/mobile-ios-arm/headers/v3_ffi.h
+            dist/mobile-ios-arm/metadata.json
+
+  build_ios_x64sim:
+    name: Build iOS x64 sim
+    needs: resolve_meta
+    runs-on: [self-hosted, macOS, X64, todero-macos-x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Apple Rust target
+        run: rustup target add x86_64-apple-ios
+      - name: Build x64 simulator slice
+        run: |
+          cargo build --manifest-path Cargo.toml -p v3-ffi --release --target x86_64-apple-ios
+          mkdir -p dist/mobile-ios-x64/iphonesimulator
+          cp target/x86_64-apple-ios/release/libv3_ffi.a dist/mobile-ios-x64/iphonesimulator/libv3_ffi.a
+      - name: Upload iOS x64 simulator artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ios-x64
+          path: dist/mobile-ios-x64/iphonesimulator/libv3_ffi.a
+
+  package_ios:
+    name: Package iOS xcframework
+    runs-on: [self-hosted, macOS, ARM64, todero-macos-arm64]
+    needs: [resolve_meta, build_ios_arm, build_ios_x64sim]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mobile-ios-arm
+          path: dist/mobile-ios-arm
+      - uses: actions/download-artifact@v4
+        with:
+          name: mobile-ios-x64
+          path: dist/mobile-ios-x64
+      - name: Assemble xcframework
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve_meta.outputs.version }}"
+          OUT="dist/mobile/${VERSION}/ios"
+          mkdir -p "${OUT}/headers" "${OUT}/iphoneos" "${OUT}/iphonesimulator"
+          cp dist/mobile-ios-arm/headers/v3_ffi.h "${OUT}/headers/v3_ffi.h"
+          cp dist/mobile-ios-arm/iphoneos/libv3_ffi.a "${OUT}/iphoneos/libv3_ffi.a"
+          lipo -create \
+            dist/mobile-ios-arm/iphonesimulator/libv3_ffi.a \
+            dist/mobile-ios-x64/iphonesimulator/libv3_ffi.a \
+            -output "${OUT}/iphonesimulator/libv3_ffi.a"
+          xcodebuild -create-xcframework \
+            -library "${OUT}/iphoneos/libv3_ffi.a" -headers "${OUT}/headers" \
+            -library "${OUT}/iphonesimulator/libv3_ffi.a" -headers "${OUT}/headers" \
+            -output "${OUT}/v3_ffi.xcframework" >/dev/null
+      - name: Create SPM-ready xcframework zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve_meta.outputs.version }}"
+          OUT="dist/mobile/${VERSION}/ios"
+          rm -f "${OUT}/v3_ffi.xcframework.zip"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "${OUT}/v3_ffi.xcframework" \
+            "${OUT}/v3_ffi.xcframework.zip"
+      - name: Upload packaged iOS mobile artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ios-package
+          path: |
+            dist/mobile/*/ios/v3_ffi.xcframework.zip
+            dist/mobile/*/ios/metadata.json
+
+  build_android:
+    name: Build Android jniLibs
+    needs: resolve_meta
+    runs-on: [self-hosted, linux, x64, todero-amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Android Rust targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android
+      - name: Build Android mobile artifacts
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_VERSION: 26.3.11579264
+          ANDROID_MIN_SDK: 21
+          MOBILE_VERSION: ${{ needs.resolve_meta.outputs.version }}
+        run: |
+          chmod +x scripts/build_mobile_android_artifacts.sh
+          scripts/build_mobile_android_artifacts.sh
+      - name: Upload Android mobile artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-android
+          path: dist/mobile/*/android
+
+  publish_android_maven:
+    name: Publish Android AAR to Maven Central
+    if: needs.resolve_meta.outputs.should_publish == 'true'
+    runs-on: [self-hosted, linux, x64, todero-amd64]
+    needs: [resolve_meta, build_android]
+    env:
+      ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+      ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+      ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_PRIVATE_KEY }}
+      ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_PASSPHRASE }}
+      TODERO_ANDROID_PUBLISH_VERSION: ${{ needs.resolve_meta.outputs.version }}
+      ANDROID_MIN_SDK: 21
+      ANDROID_COMPILE_SDK: 34
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mobile-android
+          path: dist/mobile-release/android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Stage jniLibs into Android AAR module
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf android-aar/src/main/jniLibs
+          mkdir -p android-aar/src/main
+          cp -R dist/mobile-release/android/jniLibs android-aar/src/main/jniLibs
+      - name: Validate Android AAR inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f android-aar/src/main/jniLibs/arm64-v8a/libv3_ffi.so
+          test -f android-aar/src/main/jniLibs/x86_64/libv3_ffi.so
+      - name: Publish Android AAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p android-aar publishAndReleaseToMavenCentral --no-daemon --stacktrace
+
+  publish_mobile_release:
+    name: Publish mobile release assets
+    if: needs.resolve_meta.outputs.should_publish == 'true'
+    runs-on: [self-hosted, linux, x64, todero-amd64]
+    needs: [resolve_meta, package_ios, build_android]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mobile-*
+          merge-multiple: true
+          path: dist/mobile-release
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve_meta.outputs.version }}"
+          test -f "dist/mobile-release/v3_ffi.xcframework.zip"
+          test -f "dist/mobile-release/android/todero-native-mobile-android-${VERSION}.zip"
+          test -f "dist/mobile-release/metadata.json"
+          test -f "dist/mobile-release/android/metadata.json"
+          cp "dist/mobile-release/metadata.json" "dist/mobile-release/todero-native-mobile-ios-metadata-${VERSION}.json"
+          cp "dist/mobile-release/android/metadata.json" "dist/mobile-release/todero-native-mobile-android-metadata-${VERSION}.json"
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve_meta.outputs.tag }}
+          files: |
+            dist/mobile-release/v3_ffi.xcframework.zip
+            dist/mobile-release/android/todero-native-mobile-android-${{ needs.resolve_meta.outputs.version }}.zip
+            dist/mobile-release/todero-native-mobile-ios-metadata-${{ needs.resolve_meta.outputs.version }}.json
+            dist/mobile-release/todero-native-mobile-android-metadata-${{ needs.resolve_meta.outputs.version }}.json

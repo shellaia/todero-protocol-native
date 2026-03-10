@@ -14,6 +14,37 @@ Examples:
 - `todero-native-linux-aarch64-gnu-0.1.80.tar.gz`
 - `todero-native-darwin-aarch64-0.1.80.tar.gz`
 
+## Mobile Artifact Names
+
+Per version, publish mobile artifacts under a dedicated mobile distribution flow:
+
+- iOS packaged output root:
+  - `dist/mobile/<version>/ios/`
+- Android packaged output root:
+  - `dist/mobile/<version>/android/`
+
+Required mobile outputs:
+
+- iOS:
+  - `ios/iphoneos/libv3_ffi.a`
+  - `ios/iphonesimulator/libv3_ffi.a`
+  - `ios/v3_ffi.xcframework`
+  - `ios/v3_ffi.xcframework.zip`
+  - `ios/metadata.json`
+  - published release asset:
+    - `v3_ffi.xcframework.zip`
+  - published release metadata asset:
+    - `todero-native-mobile-ios-metadata-<version>.json`
+- Android:
+  - `android/jniLibs/arm64-v8a/libv3_ffi.so`
+  - `android/jniLibs/x86_64/libv3_ffi.so`
+  - `android/todero-native-mobile-android-<version>.zip`
+  - `android/metadata.json`
+  - published release metadata asset:
+    - `todero-native-mobile-android-metadata-<version>.json`
+  - published Maven Central artifact:
+    - `com.shellaia.todero:todero-v3-ffi-android:<version>`
+
 Per tarball checksum:
 
 `todero-native-<target>-<version>.tar.gz.sha256`

@@ -18,4 +18,4 @@ v3-crypto = { path = "../v3-crypto", features = ["openssl-backend"] }
 v3-nat = { path = "../v3-nat" }
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "staticlib", "rlib"]
