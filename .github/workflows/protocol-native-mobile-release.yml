@@ -14,6 +14,10 @@ on:
 permissions:
   contents: write
 
+env:
+  # Runner image contract: Android SDK/NDK is baked into our linux amd64 runner image here.
+  ANDROID_SDK_ROOT: /opt/android-sdk
+
 jobs:
   resolve_meta:
     name: Resolve mobile release metadata
@@ -77,7 +81,9 @@ jobs:
   build_ios_x64sim:
     name: Build iOS x64 sim
     needs: resolve_meta
-    runs-on: [self-hosted, macOS, X64, todero-macos-x64]
+    # Build the x64 simulator slice on Apple Silicon to avoid reliance on Intel
+    # runner Xcode/SDK drift (iphonesimulator SDK must be present for openssl-sys).
+    runs-on: [self-hosted, macOS, ARM64, todero-macos-arm64]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
