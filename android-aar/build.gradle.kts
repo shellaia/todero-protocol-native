@@ -34,12 +34,6 @@ android {
         jniLibs.srcDir("src/main/jniLibs")
     }
 
-    publishing {
-        singleVariant("release") {
-            withSourcesJar()
-        }
-    }
-
     lint {
         abortOnError = false
     }
