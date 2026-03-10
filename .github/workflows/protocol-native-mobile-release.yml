@@ -127,6 +127,7 @@ jobs:
           mkdir -p "${OUT}/headers" "${OUT}/iphoneos" "${OUT}/iphonesimulator"
           cp dist/mobile-ios-arm/headers/v3_ffi.h "${OUT}/headers/v3_ffi.h"
           cp dist/mobile-ios-arm/iphoneos/libv3_ffi.a "${OUT}/iphoneos/libv3_ffi.a"
+          cp dist/mobile-ios-arm/metadata.json "${OUT}/metadata.json"
           lipo -create \
             dist/mobile-ios-arm/iphonesimulator/libv3_ffi.a \
             dist/mobile-ios-x64/iphonesimulator/libv3_ffi.a \
@@ -236,8 +237,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: mobile-*
-          merge-multiple: true
+          name: mobile-ios-package
+          path: dist/mobile-release
+      - uses: actions/download-artifact@v4
+        with:
+          name: mobile-android
           path: dist/mobile-release
       - name: Prepare release assets
         shell: bash
