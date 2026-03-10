@@ -26,8 +26,10 @@ Per version, publish mobile artifacts under a dedicated mobile distribution flow
 Required mobile outputs:
 
 - iOS:
-  - `ios/iphoneos/libv3_ffi.a`
-  - `ios/iphonesimulator/libv3_ffi.a`
+  - `ios/iphoneos/libv3_ffi.dylib`
+  - `ios/iphoneos/v3_ffi.framework/`
+  - `ios/iphonesimulator/libv3_ffi.dylib`
+  - `ios/iphonesimulator/v3_ffi.framework/`
   - `ios/v3_ffi.xcframework`
   - `ios/v3_ffi.xcframework.zip`
   - `ios/metadata.json`

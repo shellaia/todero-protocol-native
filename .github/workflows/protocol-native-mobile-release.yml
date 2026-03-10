@@ -73,9 +73,10 @@ jobs:
         with:
           name: mobile-ios-arm
           path: |
-            dist/mobile-ios-arm/iphoneos/libv3_ffi.a
-            dist/mobile-ios-arm/iphonesimulator/libv3_ffi.a
+            dist/mobile-ios-arm/iphoneos/libv3_ffi.dylib
+            dist/mobile-ios-arm/iphonesimulator/libv3_ffi.dylib
             dist/mobile-ios-arm/headers/v3_ffi.h
+            dist/mobile-ios-arm/modules/module.modulemap
             dist/mobile-ios-arm/metadata.json
 
   build_ios_x64sim:
@@ -91,16 +92,15 @@ jobs:
         run: rustup target add x86_64-apple-ios
       - name: Build x64 simulator slice
         run: |
-          # v3-ffi defines multiple crate-types; for iOS packaging we only need staticlib.
-          export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-12.0}"
-          cargo rustc --manifest-path Cargo.toml -p v3-ffi --release --target x86_64-apple-ios --lib -- --crate-type staticlib
+          export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
+          cargo rustc --manifest-path Cargo.toml -p v3-ffi --release --target x86_64-apple-ios --lib -- --crate-type cdylib
           mkdir -p dist/mobile-ios-x64/iphonesimulator
-          cp target/x86_64-apple-ios/release/libv3_ffi.a dist/mobile-ios-x64/iphonesimulator/libv3_ffi.a
+          cp target/x86_64-apple-ios/release/libv3_ffi.dylib dist/mobile-ios-x64/iphonesimulator/libv3_ffi.dylib
       - name: Upload iOS x64 simulator artifact
         uses: actions/upload-artifact@v4
         with:
           name: mobile-ios-x64
-          path: dist/mobile-ios-x64/iphonesimulator/libv3_ffi.a
+          path: dist/mobile-ios-x64/iphonesimulator/libv3_ffi.dylib
 
   package_ios:
     name: Package iOS xcframework
@@ -124,17 +124,55 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.resolve_meta.outputs.version }}"
           OUT="dist/mobile/${VERSION}/ios"
-          mkdir -p "${OUT}/headers" "${OUT}/iphoneos" "${OUT}/iphonesimulator"
+          mkdir -p "${OUT}/headers" "${OUT}/modules" "${OUT}/iphoneos" "${OUT}/iphonesimulator"
           cp dist/mobile-ios-arm/headers/v3_ffi.h "${OUT}/headers/v3_ffi.h"
-          cp dist/mobile-ios-arm/iphoneos/libv3_ffi.a "${OUT}/iphoneos/libv3_ffi.a"
+          cp dist/mobile-ios-arm/modules/module.modulemap "${OUT}/modules/module.modulemap"
+          cp dist/mobile-ios-arm/iphoneos/libv3_ffi.dylib "${OUT}/iphoneos/libv3_ffi.dylib"
           cp dist/mobile-ios-arm/metadata.json "${OUT}/metadata.json"
           lipo -create \
-            dist/mobile-ios-arm/iphonesimulator/libv3_ffi.a \
-            dist/mobile-ios-x64/iphonesimulator/libv3_ffi.a \
-            -output "${OUT}/iphonesimulator/libv3_ffi.a"
+            dist/mobile-ios-arm/iphonesimulator/libv3_ffi.dylib \
+            dist/mobile-ios-x64/iphonesimulator/libv3_ffi.dylib \
+            -output "${OUT}/iphonesimulator/libv3_ffi.dylib"
+
+          create_framework() {
+            local source_lib="$1"
+            local framework_root="$2"
+            mkdir -p "${framework_root}/Headers" "${framework_root}/Modules"
+            cp "${OUT}/headers/v3_ffi.h" "${framework_root}/Headers/v3_ffi.h"
+            cp "${OUT}/modules/module.modulemap" "${framework_root}/Modules/module.modulemap"
+            cp "${source_lib}" "${framework_root}/v3_ffi"
+            chmod +x "${framework_root}/v3_ffi"
+            install_name_tool -id "@rpath/v3_ffi.framework/v3_ffi" "${framework_root}/v3_ffi"
+            cat > "${framework_root}/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>v3_ffi</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.shellaia.todero.v3ffi</string>
+  <key>CFBundleName</key>
+  <string>v3_ffi</string>
+  <key>CFBundlePackageType</key>
+  <string>FMWK</string>
+  <key>CFBundleShortVersionString</key>
+  <string>${VERSION}</string>
+  <key>CFBundleVersion</key>
+  <string>${VERSION}</string>
+  <key>MinimumOSVersion</key>
+  <string>13.0</string>
+</dict>
+</plist>
+PLIST
+          }
+
+          create_framework "${OUT}/iphoneos/libv3_ffi.dylib" "${OUT}/iphoneos/v3_ffi.framework"
+          create_framework "${OUT}/iphonesimulator/libv3_ffi.dylib" "${OUT}/iphonesimulator/v3_ffi.framework"
+
           xcodebuild -create-xcframework \
-            -library "${OUT}/iphoneos/libv3_ffi.a" -headers "${OUT}/headers" \
-            -library "${OUT}/iphonesimulator/libv3_ffi.a" -headers "${OUT}/headers" \
+            -framework "${OUT}/iphoneos/v3_ffi.framework" \
+            -framework "${OUT}/iphonesimulator/v3_ffi.framework" \
             -output "${OUT}/v3_ffi.xcframework" >/dev/null
       - name: Create SPM-ready xcframework zip
         shell: bash
