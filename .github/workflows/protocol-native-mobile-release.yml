@@ -144,27 +144,27 @@ jobs:
             chmod +x "${framework_root}/v3_ffi"
             install_name_tool -id "@rpath/v3_ffi.framework/v3_ffi" "${framework_root}/v3_ffi"
             cat > "${framework_root}/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleExecutable</key>
-  <string>v3_ffi</string>
-  <key>CFBundleIdentifier</key>
-  <string>com.shellaia.todero.v3ffi</string>
-  <key>CFBundleName</key>
-  <string>v3_ffi</string>
-  <key>CFBundlePackageType</key>
-  <string>FMWK</string>
-  <key>CFBundleShortVersionString</key>
-  <string>${VERSION}</string>
-  <key>CFBundleVersion</key>
-  <string>${VERSION}</string>
-  <key>MinimumOSVersion</key>
-  <string>13.0</string>
-</dict>
-</plist>
-PLIST
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+              <key>CFBundleExecutable</key>
+              <string>v3_ffi</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.shellaia.todero.v3ffi</string>
+              <key>CFBundleName</key>
+              <string>v3_ffi</string>
+              <key>CFBundlePackageType</key>
+              <string>FMWK</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${VERSION}</string>
+              <key>CFBundleVersion</key>
+              <string>${VERSION}</string>
+              <key>MinimumOSVersion</key>
+              <string>13.0</string>
+            </dict>
+            </plist>
+            PLIST
           }
 
           create_framework "${OUT}/iphoneos/libv3_ffi.dylib" "${OUT}/iphoneos/v3_ffi.framework"
