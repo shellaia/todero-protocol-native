@@ -143,28 +143,28 @@ jobs:
             cp "${source_lib}" "${framework_root}/v3_ffi"
             chmod +x "${framework_root}/v3_ffi"
             install_name_tool -id "@rpath/v3_ffi.framework/v3_ffi" "${framework_root}/v3_ffi"
-            cat > "${framework_root}/Info.plist" <<'PLIST'
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-            <dict>
-              <key>CFBundleExecutable</key>
-              <string>v3_ffi</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.shellaia.todero.v3ffi</string>
-              <key>CFBundleName</key>
-              <string>v3_ffi</string>
-              <key>CFBundlePackageType</key>
-              <string>FMWK</string>
-              <key>CFBundleShortVersionString</key>
-              <string>${VERSION}</string>
-              <key>CFBundleVersion</key>
-              <string>${VERSION}</string>
-              <key>MinimumOSVersion</key>
-              <string>13.0</string>
-            </dict>
-            </plist>
-            PLIST
+            {
+              printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'
+              printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+              printf '%s\n' '<plist version="1.0">'
+              printf '%s\n' '<dict>'
+              printf '%s\n' '  <key>CFBundleExecutable</key>'
+              printf '%s\n' '  <string>v3_ffi</string>'
+              printf '%s\n' '  <key>CFBundleIdentifier</key>'
+              printf '%s\n' '  <string>com.shellaia.todero.v3ffi</string>'
+              printf '%s\n' '  <key>CFBundleName</key>'
+              printf '%s\n' '  <string>v3_ffi</string>'
+              printf '%s\n' '  <key>CFBundlePackageType</key>'
+              printf '%s\n' '  <string>FMWK</string>'
+              printf '%s\n' '  <key>CFBundleShortVersionString</key>'
+              printf '%s\n' "  <string>${VERSION}</string>"
+              printf '%s\n' '  <key>CFBundleVersion</key>'
+              printf '%s\n' "  <string>${VERSION}</string>"
+              printf '%s\n' '  <key>MinimumOSVersion</key>'
+              printf '%s\n' '  <string>13.0</string>'
+              printf '%s\n' '</dict>'
+              printf '%s\n' '</plist>'
+            } > "${framework_root}/Info.plist"
           }
 
           create_framework "${OUT}/iphoneos/libv3_ffi.dylib" "${OUT}/iphoneos/v3_ffi.framework"
