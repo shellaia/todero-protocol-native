@@ -37,13 +37,13 @@ impl Default for CipherPolicy {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrustConfig {
-    pub trust_anchor_ids: Vec<String>,
+    pub trust_anchor_pems: Vec<Vec<u8>>,
     pub require_hostname_verification: bool,
 }
 
 impl Default for TrustConfig {
     fn default() -> Self {
-        Self { trust_anchor_ids: Vec::new(), require_hostname_verification: true }
+        Self { trust_anchor_pems: Vec::new(), require_hostname_verification: true }
     }
 }
 
@@ -399,16 +399,42 @@ impl OpenSslDtlsAdapter {
         }
         builder.set_verify(verify);
 
+        if role == AdapterRole::Client && cfg.trust.trust_anchor_pems.is_empty() {
+            return Err(CryptoError::InvalidConfig(
+                "at least one trust anchor is required for client TLS".to_string(),
+            ));
+        }
+
         if !cfg.cipher_policy.allow_weak_suites {
             builder
                 .set_cipher_list("HIGH:!aNULL:!MD5:!RC4:!DES:!3DES")
                 .map_err(|e| CryptoError::InvalidConfig(format!("cipher policy reject: {e}")))?;
         }
 
-        if let Some(anchor) = cfg.trust.trust_anchor_ids.first() {
-            builder.set_ca_file(anchor).map_err(|e| {
-                CryptoError::InvalidConfig(format!("invalid trust anchor '{anchor}': {e}"))
+        if !cfg.trust.trust_anchor_pems.is_empty() {
+            let mut store_builder = openssl::x509::store::X509StoreBuilder::new().map_err(|e| {
+                CryptoError::Provider(format!("openssl trust store build failed: {e}"))
             })?;
+            for (index, anchor_pem) in cfg.trust.trust_anchor_pems.iter().enumerate() {
+                let certs = openssl::x509::X509::stack_from_pem(anchor_pem).map_err(|e| {
+                    CryptoError::InvalidConfig(format!(
+                        "invalid trust anchor bundle at index {index}: {e}"
+                    ))
+                })?;
+                if certs.is_empty() {
+                    return Err(CryptoError::InvalidConfig(format!(
+                        "trust anchor bundle at index {index} does not contain any certificates"
+                    )));
+                }
+                for cert in certs {
+                    store_builder.add_cert(cert).map_err(|e| {
+                        CryptoError::InvalidConfig(format!(
+                            "failed to add trust anchor certificate at index {index}: {e}"
+                        ))
+                    })?;
+                }
+            }
+            builder.set_cert_store(store_builder.build());
         }
 
         if let Some(id) = &cfg.client_identity {
@@ -818,6 +844,42 @@ impl RevocationList {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "openssl-backend")]
+    fn test_root_anchor_pem() -> Vec<u8> {
+        use openssl::asn1::Asn1Time;
+        use openssl::bn::BigNum;
+        use openssl::hash::MessageDigest;
+        use openssl::nid::Nid;
+        use openssl::pkey::PKey;
+        use openssl::rsa::Rsa;
+        use openssl::x509::{X509, X509NameBuilder};
+
+        let rsa = Rsa::generate(2048).expect("rsa");
+        let key = PKey::from_rsa(rsa).expect("pkey");
+        let mut name = X509NameBuilder::new().expect("name builder");
+        name.append_entry_by_nid(Nid::COMMONNAME, "v3-crypto test root")
+            .expect("common name");
+        let name = name.build();
+
+        let mut serial = BigNum::new().expect("serial");
+        serial.pseudo_rand(64, openssl::bn::MsbOption::MAYBE_ZERO, false)
+            .expect("serial rand");
+        let serial = serial.to_asn1_integer().expect("serial asn1");
+
+        let mut cert = X509::builder().expect("cert builder");
+        cert.set_version(2).expect("version");
+        cert.set_serial_number(&serial).expect("serial");
+        cert.set_subject_name(&name).expect("subject");
+        cert.set_issuer_name(&name).expect("issuer");
+        cert.set_pubkey(&key).expect("pubkey");
+        cert.set_not_before(&Asn1Time::days_from_now(0).expect("not before"))
+            .expect("set not before");
+        cert.set_not_after(&Asn1Time::days_from_now(365).expect("not after"))
+            .expect("set not after");
+        cert.sign(&key, MessageDigest::sha256()).expect("sign");
+        cert.build().to_pem().expect("pem")
+    }
+
     #[test]
     fn replay_window_rejects_duplicates_and_too_old() {
         let mut win = ReplayWindow::new(8);
@@ -1010,7 +1072,10 @@ mod tests {
         let cfg = HandshakeConfig {
             profile: AuthProfile::ServerAuth,
             cipher_policy: CipherPolicy::default(),
-            trust: TrustConfig::default(),
+            trust: TrustConfig {
+                trust_anchor_pems: vec![test_root_anchor_pem()],
+                require_hostname_verification: true,
+            },
             client_identity: None,
             expected_server_name: Some("api.example.com".to_string()),
         };
@@ -1037,7 +1102,10 @@ mod tests {
         let cfg = HandshakeConfig {
             profile: AuthProfile::ServerAuth,
             cipher_policy: CipherPolicy::default(),
-            trust: TrustConfig::default(),
+            trust: TrustConfig {
+                trust_anchor_pems: vec![test_root_anchor_pem()],
+                require_hostname_verification: true,
+            },
             client_identity: None,
             expected_server_name: Some("api.example.com".to_string()),
         };

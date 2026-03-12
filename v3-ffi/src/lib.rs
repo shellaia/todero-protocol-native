@@ -275,25 +275,14 @@ fn is_dtls_packet(bytes: &[u8]) -> bool {
 
 fn build_client_tls_cfg(
     expected_server_name: &str,
-    trust_anchor_path: Option<&str>,
 ) -> Result<HandshakeConfig, String> {
     if expected_server_name.trim().is_empty() {
         return Err("expected_server_name is required for TLS".to_string());
     }
-    let mut trust_anchor_ids = Vec::new();
-    if let Some(path) = trust_anchor_path.map(str::trim).filter(|s| !s.is_empty()) {
-        if !std::path::Path::new(path).exists() {
-            return Err(format!("trust anchor path does not exist: {path}"));
-        }
-        trust_anchor_ids.push(path.to_string());
-    } else {
-        return Err("trust anchor path is required for V3 TLS mode".to_string());
-    }
-
     Ok(HandshakeConfig {
         profile: AuthProfile::ServerAuth,
         cipher_policy: CipherPolicy::default(),
-        trust: TrustConfig { trust_anchor_ids, require_hostname_verification: true },
+        trust: TrustConfig { trust_anchor_pems: Vec::new(), require_hostname_verification: true },
         client_identity: None,
         expected_server_name: Some(expected_server_name.to_string()),
     })
@@ -319,7 +308,7 @@ fn build_server_tls_cfg(
     Ok(HandshakeConfig {
         profile: AuthProfile::ServerAuth,
         cipher_policy: CipherPolicy::default(),
-        trust: TrustConfig { trust_anchor_ids: Vec::new(), require_hostname_verification: false },
+        trust: TrustConfig { trust_anchor_pems: Vec::new(), require_hostname_verification: false },
         client_identity: Some(v3_crypto::ClientIdentityRef {
             key_id: key_path.trim().to_string(),
             cert_chain_ids: vec![cert_path.trim().to_string()],
@@ -749,24 +738,17 @@ pub extern "C" fn v3_ffi_configure_client_tls(
     handle_id: u64,
     expected_server_name_ptr: *const u8,
     expected_server_name_len: usize,
-    trust_anchor_path_ptr: *const u8,
-    trust_anchor_path_len: usize,
 ) -> i32 {
     let mut reg = registry().lock().expect("registry mutex poisoned");
     let Some(handle) = reg.handles.get_mut(&handle_id) else {
         return -1;
     };
     let expected = unsafe { bytes_from_ptr(expected_server_name_ptr, expected_server_name_len) };
-    let trust = unsafe { bytes_from_ptr(trust_anchor_path_ptr, trust_anchor_path_len) };
     let expected = match std::str::from_utf8(expected) {
         Ok(v) => v,
         Err(e) => return set_error(handle, format!("invalid expected_server_name utf8: {e}")),
     };
-    let trust = match std::str::from_utf8(trust) {
-        Ok(v) => Some(v),
-        Err(e) => return set_error(handle, format!("invalid trust_anchor_path utf8: {e}")),
-    };
-    let cfg = match build_client_tls_cfg(expected, trust) {
+    let cfg = match build_client_tls_cfg(expected) {
         Ok(v) => v,
         Err(e) => return set_error(handle, e),
     };
@@ -782,6 +764,69 @@ pub extern "C" fn v3_ffi_configure_client_tls(
         }
         EngineKind::Server(_) => {
             set_error(handle, "client tls can only be configured on client handle".to_string())
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn v3_ffi_tls_clear_anchors(handle_id: u64) -> i32 {
+    let mut reg = registry().lock().expect("registry mutex poisoned");
+    let Some(handle) = reg.handles.get_mut(&handle_id) else {
+        return -1;
+    };
+    match &mut handle.tls {
+        TlsMode::Client(state) => {
+            if state.established || state.core_started {
+                return set_error(
+                    handle,
+                    "trust anchors can only be changed before handshake start".to_string(),
+                );
+            }
+            state.cfg.trust.trust_anchor_pems.clear();
+            0
+        }
+        TlsMode::Disabled => set_error(
+            handle,
+            "client tls must be configured before setting trust anchors".to_string(),
+        ),
+        TlsMode::Server(_) => {
+            set_error(handle, "trust anchors can only be changed on client tls".to_string())
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn v3_ffi_tls_add_anchor_pem(
+    handle_id: u64,
+    pem_ptr: *const u8,
+    pem_len: usize,
+) -> i32 {
+    let mut reg = registry().lock().expect("registry mutex poisoned");
+    let Some(handle) = reg.handles.get_mut(&handle_id) else {
+        return -1;
+    };
+    let pem = unsafe { bytes_from_ptr(pem_ptr, pem_len) };
+    if pem.is_empty() {
+        return set_error(handle, "trust anchor pem bytes are empty".to_string());
+    }
+    match &mut handle.tls {
+        TlsMode::Client(state) => {
+            if state.established || state.core_started {
+                return set_error(
+                    handle,
+                    "trust anchors can only be changed before handshake start".to_string(),
+                );
+            }
+            state.cfg.trust.trust_anchor_pems.push(pem.to_vec());
+            0
+        }
+        TlsMode::Disabled => set_error(
+            handle,
+            "client tls must be configured before setting trust anchors".to_string(),
+        ),
+        TlsMode::Server(_) => {
+            set_error(handle, "trust anchors can only be changed on client tls".to_string())
         }
     }
 }
@@ -1150,28 +1195,44 @@ pub extern "system" fn Java_io_todero_v3jni_V3NativeBindings_v3FfiConfigureClien
     _class: JClass,
     handle: jlong,
     expected_server_name: JByteArray,
-    trust_anchor_path: JByteArray,
 ) -> jint {
     if handle < 0 {
         return -1;
     }
-    // SAFETY: same thread and frame; cloning JNIEnv handle is valid for immediate reuse.
-    let env2 = unsafe { env.unsafe_clone() };
     let expected = match jbyte_array_to_vec(env, expected_server_name) {
         Some(v) => v,
         None => return -1,
     };
-    let trust = match jbyte_array_to_vec(env2, trust_anchor_path) {
+    v3_ffi_configure_client_tls(handle as u64, expected.as_ptr(), expected.len()) as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_todero_v3jni_V3NativeBindings_v3FfiTlsClearAnchors(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jint {
+    if handle < 0 {
+        return -1;
+    }
+    v3_ffi_tls_clear_anchors(handle as u64) as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_todero_v3jni_V3NativeBindings_v3FfiTlsAddAnchorPem(
+    env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    pem_bytes: JByteArray,
+) -> jint {
+    if handle < 0 {
+        return -1;
+    }
+    let pem = match jbyte_array_to_vec(env, pem_bytes) {
         Some(v) => v,
         None => return -1,
     };
-    v3_ffi_configure_client_tls(
-        handle as u64,
-        expected.as_ptr(),
-        expected.len(),
-        trust.as_ptr(),
-        trust.len(),
-    ) as jint
+    v3_ffi_tls_add_anchor_pem(handle as u64, pem.as_ptr(), pem.len()) as jint
 }
 
 #[unsafe(no_mangle)]
