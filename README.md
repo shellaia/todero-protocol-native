@@ -160,17 +160,13 @@ sudo dnf makecache
 sudo dnf install -y todero-native
 ```
 
-## Release Workflow Secrets
+## Release Workflow Inputs
 
 `protocol-native-release.yml` requires:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
 - `AWS_REGION`
-- `S3_BUCKET_APT`
-- `S3_BUCKET_YUM`
-- `S3_BUCKET_BREW`
-- `S3_PREFIX`
 - `APT_GPG_PRIVATE_KEY`
 - `APT_GPG_PASSPHRASE` (optional if key has no passphrase)
 - `APT_GPG_KEY_ID` (optional; auto-detected if omitted)
@@ -180,6 +176,10 @@ sudo dnf install -y todero-native
 
 Required repository variables:
 
+- `S3_BUCKET_APT`
+- `S3_BUCKET_YUM`
+- `S3_BUCKET_BREW`
+- `S3_PREFIX`
 - `BREW_TAP_REPO` (example: `shellaia/homebrew-todero`)
 - `BREW_TAP_APP_ID`
 

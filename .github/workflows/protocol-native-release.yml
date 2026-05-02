@@ -461,7 +461,7 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
         run: |
           set -euo pipefail
           chmod +x scripts/generate_brew_formula.sh
@@ -472,7 +472,7 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
         run: |
           set -euo pipefail
           formula="dist/release/todero-native.rb"
@@ -605,10 +605,10 @@ jobs:
       - name: Publish native artifacts to channel backing stores
         shell: bash
         env:
-          S3_BUCKET_APT: ${{ secrets.S3_BUCKET_APT }}
-          S3_BUCKET_YUM: ${{ secrets.S3_BUCKET_YUM }}
-          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
-          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          S3_BUCKET_APT: ${{ vars.S3_BUCKET_APT }}
+          S3_BUCKET_YUM: ${{ vars.S3_BUCKET_YUM }}
+          S3_BUCKET_BREW: ${{ vars.S3_BUCKET_BREW }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
@@ -917,10 +917,10 @@ jobs:
       - name: Validate alias current-only and history integrity
         shell: bash
         env:
-          S3_BUCKET_APT: ${{ secrets.S3_BUCKET_APT }}
-          S3_BUCKET_YUM: ${{ secrets.S3_BUCKET_YUM }}
-          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
-          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          S3_BUCKET_APT: ${{ vars.S3_BUCKET_APT }}
+          S3_BUCKET_YUM: ${{ vars.S3_BUCKET_YUM }}
+          S3_BUCKET_BREW: ${{ vars.S3_BUCKET_BREW }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
           VERSION: ${{ steps.meta.outputs.version }}
           VALIDATION_MODE: ${{ inputs.validation_mode }}
           VALIDATION_HISTORY_LIMIT: ${{ inputs.validation_history_limit }}
@@ -941,7 +941,7 @@ jobs:
       - name: Invalidate CloudFront metadata paths
         shell: bash
         env:
-          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
           CF_DIST_APT: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_APT }}
           CF_DIST_YUM: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_YUM }}
           CF_DIST_BREW: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID_BREW }}
@@ -976,10 +976,10 @@ jobs:
       - name: Rollback dry-drill (non-destructive)
         shell: bash
         env:
-          S3_BUCKET_APT: ${{ secrets.S3_BUCKET_APT }}
-          S3_BUCKET_YUM: ${{ secrets.S3_BUCKET_YUM }}
-          S3_BUCKET_BREW: ${{ secrets.S3_BUCKET_BREW }}
-          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+          S3_BUCKET_APT: ${{ vars.S3_BUCKET_APT }}
+          S3_BUCKET_YUM: ${{ vars.S3_BUCKET_YUM }}
+          S3_BUCKET_BREW: ${{ vars.S3_BUCKET_BREW }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
