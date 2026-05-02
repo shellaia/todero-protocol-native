@@ -3,28 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-VERSION="${MOBILE_VERSION:-$(python3 - "${REPO_ROOT}/Cargo.toml" <<'PY'
-import sys
-from pathlib import Path
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib  # type: ignore
-
-path = Path(sys.argv[1])
-data = tomllib.loads(path.read_text(encoding="utf-8"))
-workspace_pkg = data.get("workspace", {}).get("package", {})
-if "version" in workspace_pkg:
-    print(workspace_pkg["version"])
-    raise SystemExit(0)
-pkg = data.get("package", {})
-if "version" in pkg:
-    print(pkg["version"])
-    raise SystemExit(0)
-raise SystemExit("missing version in Cargo.toml")
-PY
-)}"
+read_cargo_version() {
+  python3 -c 'import sys; from pathlib import Path; import tomllib; data = tomllib.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); version = data.get("workspace", {}).get("package", {}).get("version") or data.get("package", {}).get("version"); print(version) if version else (_ for _ in ()).throw(SystemExit("missing version in Cargo.toml"))' "${REPO_ROOT}/Cargo.toml"
+}
+VERSION="${MOBILE_VERSION:-$(read_cargo_version)}"
 OUT_ROOT="${MOBILE_OUT_DIR:-${REPO_ROOT}/dist/mobile/${VERSION}/ios}"
 WORKSPACE_MANIFEST="${REPO_ROOT}/Cargo.toml"
 CRATE_NAME="v3-ffi"
