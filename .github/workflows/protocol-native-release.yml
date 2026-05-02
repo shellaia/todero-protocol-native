@@ -74,19 +74,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          read_cargo_version() {
+            python3 -c 'import sys; from pathlib import Path; import tomllib; data = tomllib.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); version = data.get("workspace", {}).get("package", {}).get("version") or data.get("package", {}).get("version"); print(version) if version else (_ for _ in ()).throw(SystemExit("missing version in Cargo.toml"))' "${GITHUB_WORKSPACE}/Cargo.toml"
+          }
+
+          CARGO_VERSION="$(read_cargo_version)"
           TAG=""
           VERSION=""
           if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
-            VERSION="${TAG#v}"
+            [[ "${TAG#v}" == "${CARGO_VERSION}" ]] || {
+              echo "tag ${TAG} does not match Cargo.toml version ${CARGO_VERSION}" >&2
+              exit 1
+            }
+            VERSION="${CARGO_VERSION}"
           elif [[ -n "${{ inputs.release_tag }}" ]]; then
             TAG="${{ inputs.release_tag }}"
-            VERSION="${TAG#v}"
+            [[ "${TAG#v}" == "${CARGO_VERSION}" ]] || {
+              echo "release_tag ${TAG} does not match Cargo.toml version ${CARGO_VERSION}" >&2
+              exit 1
+            }
+            VERSION="${CARGO_VERSION}"
           else
             VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "cargo_version=${CARGO_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -218,19 +232,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          read_cargo_version() {
+            python3 -c 'import sys; from pathlib import Path; import tomllib; data = tomllib.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); version = data.get("workspace", {}).get("package", {}).get("version") or data.get("package", {}).get("version"); print(version) if version else (_ for _ in ()).throw(SystemExit("missing version in Cargo.toml"))' "${GITHUB_WORKSPACE}/Cargo.toml"
+          }
+
+          CARGO_VERSION="$(read_cargo_version)"
           TAG=""
           VERSION=""
           if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
-            VERSION="${TAG#v}"
+            [[ "${TAG#v}" == "${CARGO_VERSION}" ]] || {
+              echo "tag ${TAG} does not match Cargo.toml version ${CARGO_VERSION}" >&2
+              exit 1
+            }
+            VERSION="${CARGO_VERSION}"
           elif [[ -n "${{ inputs.release_tag }}" ]]; then
             TAG="${{ inputs.release_tag }}"
-            VERSION="${TAG#v}"
+            [[ "${TAG#v}" == "${CARGO_VERSION}" ]] || {
+              echo "release_tag ${TAG} does not match Cargo.toml version ${CARGO_VERSION}" >&2
+              exit 1
+            }
+            VERSION="${CARGO_VERSION}"
           else
             VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "cargo_version=${CARGO_VERSION}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
 

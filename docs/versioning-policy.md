@@ -22,7 +22,7 @@
 
 - Use `scripts/release/publish-release` to cut patch releases.
 - Script enforces `main` branch and clean worktree.
-- Script updates `version.txt`, commits/pushes it, then creates/pushes `vX.Y.Z`.
+- Script updates `Cargo.toml`, commits/pushes it, then creates/pushes `vX.Y.Z`.
 - Script only increments patch (`z`) and never changes major/minor.
 
 ## Pre-release Builds

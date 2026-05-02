@@ -77,9 +77,9 @@ scripts/release/publish-release
 
 Rules:
 - Must run from `main` (script verifies and fails otherwise).
-- Uses `version.txt` as source of truth.
-- Commits/pushes `version.txt` first, then creates/pushes `vX.Y.Z` tag.
-- Major/minor bumps are manual changes to `version.txt` outside this script.
+- Uses `Cargo.toml` as source of truth.
+- Commits/pushes `Cargo.toml` first, then creates/pushes `vX.Y.Z` tag.
+- Major/minor bumps are manual edits to `Cargo.toml` outside this script.
 
 ## Brew Install (Direct Formula URL)
 

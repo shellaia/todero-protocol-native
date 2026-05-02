@@ -22,7 +22,8 @@ Usage:
 Behavior:
   - runs only from branch: main
   - bumps patch version only (X.Y.Z -> X.Y.Z+1)
-  - commits + pushes version.txt first
+  - updates Cargo.toml version first
+  - commits + pushes Cargo.toml
   - creates + pushes tag vX.Y.Z after commit push
 USAGE
 }
@@ -44,22 +45,84 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+cd "${REPO_ROOT}"
+
 STEP="repository-check"
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "not inside a git repository"
+git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "not inside a git repository"
+
+read_cargo_version() {
+  python3 - "${REPO_ROOT}/Cargo.toml" <<'PY'
+import sys
+from pathlib import Path
+
+try:
+    import tomllib  # py311+
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as tomllib  # type: ignore
+
+path = Path(sys.argv[1])
+data = tomllib.loads(path.read_text(encoding="utf-8"))
+workspace_pkg = data.get("workspace", {}).get("package", {})
+if "version" in workspace_pkg:
+    print(workspace_pkg["version"])
+    raise SystemExit(0)
+pkg = data.get("package", {})
+if "version" in pkg:
+    print(pkg["version"])
+    raise SystemExit(0)
+raise SystemExit("missing version in Cargo.toml")
+PY
+}
+
+write_cargo_version() {
+  local new_version="$1"
+  python3 - "${REPO_ROOT}/Cargo.toml" "${new_version}" <<'PY'
+import sys
+import re
+from pathlib import Path
+
+path = Path(sys.argv[1])
+new_version = sys.argv[2]
+text = path.read_text(encoding="utf-8")
+lines = text.splitlines()
+section = None
+target_section = None
+for name in ("workspace.package", "package"):
+    if f"[{name}]" in text:
+        target_section = f"[{name}]"
+        break
+if target_section is None:
+    raise SystemExit("missing [workspace.package] or [package] section")
+
+for idx, line in enumerate(lines):
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        section = stripped
+        continue
+    if section == target_section and re.match(r'^\s*version\s*=\s*".*"\s*$', line):
+        indent = line[: len(line) - len(line.lstrip())]
+        lines[idx] = f'{indent}version = "{new_version}"'
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        raise SystemExit(0)
+
+raise SystemExit(f"could not find version line in {target_section}")
+PY
+}
 
 STEP="branch-check"
-current_branch="$(git rev-parse --abbrev-ref HEAD)"
+current_branch="$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD)"
 [[ "${current_branch}" == "main" ]] || fail "current branch is '${current_branch}', expected 'main'"
 
 STEP="worktree-check"
-git diff --quiet || fail "working tree has unstaged changes"
-git diff --cached --quiet || fail "working tree has staged changes"
-[[ -z "$(git ls-files --others --exclude-standard)" ]] || fail "working tree has untracked files"
+git -C "${REPO_ROOT}" diff --quiet || fail "working tree has unstaged changes"
+git -C "${REPO_ROOT}" diff --cached --quiet || fail "working tree has staged changes"
+[[ -z "$(git -C "${REPO_ROOT}" ls-files --others --exclude-standard)" ]] || fail "working tree has untracked files"
 
 STEP="version-read"
-[[ -f "version.txt" ]] || fail "missing version.txt"
-current_version="$(tr -d '[:space:]' < version.txt)"
-[[ "${current_version}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || fail "version.txt must contain strict semver X.Y.Z"
+current_version="$(read_cargo_version)"
+[[ "${current_version}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || fail "Cargo.toml version must contain strict semver X.Y.Z"
 major="${BASH_REMATCH[1]}"
 minor="${BASH_REMATCH[2]}"
 patch="${BASH_REMATCH[3]}"
@@ -68,12 +131,12 @@ next_version="${major}.${minor}.${next_patch}"
 next_tag="v${next_version}"
 
 STEP="tag-collision-check-local"
-if git rev-parse -q --verify "refs/tags/${next_tag}" >/dev/null; then
+if git -C "${REPO_ROOT}" rev-parse -q --verify "refs/tags/${next_tag}" >/dev/null; then
   fail "tag already exists locally: ${next_tag}"
 fi
 
 STEP="tag-collision-check-remote"
-if [[ -n "$(git ls-remote --tags origin "refs/tags/${next_tag}")" ]]; then
+if [[ -n "$(git -C "${REPO_ROOT}" ls-remote --tags origin "refs/tags/${next_tag}")" ]]; then
   fail "tag already exists on origin: ${next_tag}"
 fi
 
@@ -89,20 +152,20 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
 fi
 
 STEP="write-version"
-printf "%s\n" "${next_version}" > version.txt
+write_cargo_version "${next_version}"
 
 STEP="commit-version"
-git add version.txt
-git commit -m "chore(release): bump version to ${next_version}"
+git -C "${REPO_ROOT}" add Cargo.toml
+git -C "${REPO_ROOT}" commit -m "chore(release): bump version to ${next_version}"
 
 STEP="push-commit"
-git push origin main
+git -C "${REPO_ROOT}" push origin main
 
 STEP="create-tag"
-git tag -a "${next_tag}" -m "release ${next_tag}"
+git -C "${REPO_ROOT}" tag -a "${next_tag}" -m "release ${next_tag}"
 
 STEP="push-tag"
-if ! git push origin "${next_tag}"; then
+if ! git -C "${REPO_ROOT}" push origin "${next_tag}"; then
   echo "publish-release failed after commit push." >&2
   echo "recovery: retry tag push with: git push origin ${next_tag}" >&2
   exit 1
@@ -110,5 +173,5 @@ fi
 
 STEP="done"
 echo "publish-release completed successfully"
-echo "  pushed commit on main with version.txt=${next_version}"
+echo "  pushed commit on main with Cargo.toml=${next_version}"
 echo "  pushed tag ${next_tag}"
