@@ -52,145 +52,29 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "should_publish=${SHOULD_PUBLISH}" >> "$GITHUB_OUTPUT"
 
-  build_ios_arm:
-    name: Build iOS device + arm64 sim
+  build_apple:
+    name: Build Apple xcframework
     needs: resolve_meta
     runs-on: [self-hosted, macOS, ARM64, todero-macos-arm64]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Apple Rust targets
-        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-      - name: Build iOS arm slices
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin
+      - name: Build Apple mobile artifacts
         env:
           MOBILE_VERSION: ${{ needs.resolve_meta.outputs.version }}
-          MOBILE_OUT_DIR: ${{ github.workspace }}/dist/mobile-ios-arm
+          MOBILE_OUT_DIR: ${{ github.workspace }}/dist/mobile-apple
         run: |
-          chmod +x scripts/build_mobile_ios_artifacts.sh
-          scripts/build_mobile_ios_artifacts.sh
-      - name: Upload iOS arm artifacts
+          chmod +x scripts/build_mobile_apple_artifacts.sh
+          scripts/build_mobile_apple_artifacts.sh
+      - name: Upload Apple mobile artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mobile-ios-arm
+          name: mobile-apple-package
           path: |
-            dist/mobile-ios-arm/iphoneos/libv3_ffi.dylib
-            dist/mobile-ios-arm/iphonesimulator/libv3_ffi.dylib
-            dist/mobile-ios-arm/headers/v3_ffi.h
-            dist/mobile-ios-arm/modules/module.modulemap
-            dist/mobile-ios-arm/metadata.json
-
-  build_ios_x64sim:
-    name: Build iOS x64 sim
-    needs: resolve_meta
-    # Build the x64 simulator slice on Apple Silicon to avoid reliance on Intel
-    # runner Xcode/SDK drift (iphonesimulator SDK must be present for openssl-sys).
-    runs-on: [self-hosted, macOS, ARM64, todero-macos-arm64]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Apple Rust target
-        run: rustup target add x86_64-apple-ios
-      - name: Build x64 simulator slice
-        run: |
-          export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
-          cargo rustc --manifest-path Cargo.toml -p v3-ffi --release --target x86_64-apple-ios --lib -- --crate-type cdylib
-          mkdir -p dist/mobile-ios-x64/iphonesimulator
-          cp target/x86_64-apple-ios/release/libv3_ffi.dylib dist/mobile-ios-x64/iphonesimulator/libv3_ffi.dylib
-      - name: Upload iOS x64 simulator artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mobile-ios-x64
-          path: dist/mobile-ios-x64/iphonesimulator/libv3_ffi.dylib
-
-  package_ios:
-    name: Package iOS xcframework
-    runs-on: [self-hosted, macOS, ARM64, todero-macos-arm64]
-    needs: [resolve_meta, build_ios_arm, build_ios_x64sim]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: mobile-ios-arm
-          path: dist/mobile-ios-arm
-      - uses: actions/download-artifact@v4
-        with:
-          name: mobile-ios-x64
-          # The x64 artifact is uploaded as a single file; download it directly
-          # into the expected directory for lipo.
-          path: dist/mobile-ios-x64/iphonesimulator
-      - name: Assemble xcframework
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.resolve_meta.outputs.version }}"
-          OUT="dist/mobile/${VERSION}/ios"
-          mkdir -p "${OUT}/headers" "${OUT}/modules" "${OUT}/iphoneos" "${OUT}/iphonesimulator"
-          cp dist/mobile-ios-arm/headers/v3_ffi.h "${OUT}/headers/v3_ffi.h"
-          cp dist/mobile-ios-arm/modules/module.modulemap "${OUT}/modules/module.modulemap"
-          cp dist/mobile-ios-arm/iphoneos/libv3_ffi.dylib "${OUT}/iphoneos/libv3_ffi.dylib"
-          cp dist/mobile-ios-arm/metadata.json "${OUT}/metadata.json"
-          lipo -create \
-            dist/mobile-ios-arm/iphonesimulator/libv3_ffi.dylib \
-            dist/mobile-ios-x64/iphonesimulator/libv3_ffi.dylib \
-            -output "${OUT}/iphonesimulator/libv3_ffi.dylib"
-
-          create_framework() {
-            local source_lib="$1"
-            local framework_root="$2"
-            mkdir -p "${framework_root}/Headers" "${framework_root}/Modules"
-            cp "${OUT}/headers/v3_ffi.h" "${framework_root}/Headers/v3_ffi.h"
-            cp "${OUT}/modules/module.modulemap" "${framework_root}/Modules/module.modulemap"
-            cp "${source_lib}" "${framework_root}/v3_ffi"
-            chmod +x "${framework_root}/v3_ffi"
-            install_name_tool -id "@rpath/v3_ffi.framework/v3_ffi" "${framework_root}/v3_ffi"
-            {
-              printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'
-              printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
-              printf '%s\n' '<plist version="1.0">'
-              printf '%s\n' '<dict>'
-              printf '%s\n' '  <key>CFBundleExecutable</key>'
-              printf '%s\n' '  <string>v3_ffi</string>'
-              printf '%s\n' '  <key>CFBundleIdentifier</key>'
-              printf '%s\n' '  <string>com.shellaia.todero.v3ffi</string>'
-              printf '%s\n' '  <key>CFBundleName</key>'
-              printf '%s\n' '  <string>v3_ffi</string>'
-              printf '%s\n' '  <key>CFBundlePackageType</key>'
-              printf '%s\n' '  <string>FMWK</string>'
-              printf '%s\n' '  <key>CFBundleShortVersionString</key>'
-              printf '%s\n' "  <string>${VERSION}</string>"
-              printf '%s\n' '  <key>CFBundleVersion</key>'
-              printf '%s\n' "  <string>${VERSION}</string>"
-              printf '%s\n' '  <key>MinimumOSVersion</key>'
-              printf '%s\n' '  <string>13.0</string>'
-              printf '%s\n' '</dict>'
-              printf '%s\n' '</plist>'
-            } > "${framework_root}/Info.plist"
-          }
-
-          create_framework "${OUT}/iphoneos/libv3_ffi.dylib" "${OUT}/iphoneos/v3_ffi.framework"
-          create_framework "${OUT}/iphonesimulator/libv3_ffi.dylib" "${OUT}/iphonesimulator/v3_ffi.framework"
-
-          xcodebuild -create-xcframework \
-            -framework "${OUT}/iphoneos/v3_ffi.framework" \
-            -framework "${OUT}/iphonesimulator/v3_ffi.framework" \
-            -output "${OUT}/v3_ffi.xcframework" >/dev/null
-      - name: Create SPM-ready xcframework zip
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.resolve_meta.outputs.version }}"
-          OUT="dist/mobile/${VERSION}/ios"
-          rm -f "${OUT}/v3_ffi.xcframework.zip"
-          ditto -c -k --sequesterRsrc --keepParent \
-            "${OUT}/v3_ffi.xcframework" \
-            "${OUT}/v3_ffi.xcframework.zip"
-      - name: Upload packaged iOS mobile artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mobile-ios-package
-          path: |
-            dist/mobile/*/ios/v3_ffi.xcframework.zip
-            dist/mobile/*/ios/metadata.json
+            dist/mobile-apple/v3_ffi.xcframework.zip
+            dist/mobile-apple/metadata.json
 
   build_android:
     name: Build Android jniLibs
@@ -271,11 +155,11 @@ jobs:
     name: Publish mobile release assets
     if: needs.resolve_meta.outputs.should_publish == 'true'
     runs-on: [self-hosted, linux, x64, todero-amd64]
-    needs: [resolve_meta, package_ios, build_android]
+    needs: [resolve_meta, build_apple, build_android]
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: mobile-ios-package
+          name: mobile-apple-package
           path: dist/mobile-release
       - uses: actions/download-artifact@v4
         with:
@@ -291,13 +175,13 @@ jobs:
           find dist/mobile-release -maxdepth 5 -type f | sort || true
 
           ios_zip="$(find dist/mobile-release -name "v3_ffi.xcframework.zip" -print -quit || true)"
-          ios_meta="$(find dist/mobile-release -path "*/ios/metadata.json" -print -quit || true)"
+          ios_meta="$(find dist/mobile-release -path "*/apple/metadata.json" -print -quit || true)"
           android_zip="$(find dist/mobile-release -name "todero-native-mobile-android-${VERSION}.zip" -print -quit || true)"
           android_symbols_zip="$(find dist/mobile-release -name "todero-native-mobile-android-symbols-${VERSION}.zip" -print -quit || true)"
           android_meta="$(find dist/mobile-release -path "*/android/metadata.json" -print -quit || true)"
 
-          echo "Resolved iOS zip: ${ios_zip:-<missing>}"
-          echo "Resolved iOS metadata: ${ios_meta:-<missing>}"
+          echo "Resolved Apple xcframework zip: ${ios_zip:-<missing>}"
+          echo "Resolved Apple metadata: ${ios_meta:-<missing>}"
           echo "Resolved Android zip: ${android_zip:-<missing>}"
           echo "Resolved Android symbols zip: ${android_symbols_zip:-<missing>}"
           echo "Resolved Android metadata: ${android_meta:-<missing>}"
@@ -313,7 +197,7 @@ jobs:
           cp -f "${android_zip}" "dist/mobile-release/android/todero-native-mobile-android-${VERSION}.zip"
           cp -f "${android_symbols_zip}" "dist/mobile-release/android/todero-native-mobile-android-symbols-${VERSION}.zip"
           cp -f "${android_meta}" "dist/mobile-release/android/metadata.json"
-          cp -f "${ios_meta}" "dist/mobile-release/todero-native-mobile-ios-metadata-${VERSION}.json"
+          cp -f "${ios_meta}" "dist/mobile-release/todero-native-mobile-apple-metadata-${VERSION}.json"
           cp "dist/mobile-release/android/metadata.json" "dist/mobile-release/todero-native-mobile-android-metadata-${VERSION}.json"
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
@@ -323,5 +207,5 @@ jobs:
             dist/mobile-release/v3_ffi.xcframework.zip
             dist/mobile-release/android/todero-native-mobile-android-${{ needs.resolve_meta.outputs.version }}.zip
             dist/mobile-release/android/todero-native-mobile-android-symbols-${{ needs.resolve_meta.outputs.version }}.zip
-            dist/mobile-release/todero-native-mobile-ios-metadata-${{ needs.resolve_meta.outputs.version }}.json
+            dist/mobile-release/todero-native-mobile-apple-metadata-${{ needs.resolve_meta.outputs.version }}.json
             dist/mobile-release/todero-native-mobile-android-metadata-${{ needs.resolve_meta.outputs.version }}.json

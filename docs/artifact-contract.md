@@ -18,25 +18,27 @@ Examples:
 
 Per version, publish mobile artifacts under a dedicated mobile distribution flow:
 
-- iOS packaged output root:
-  - `dist/mobile/<version>/ios/`
+- Apple packaged output root:
+  - `dist/mobile/<version>/apple/`
 - Android packaged output root:
   - `dist/mobile/<version>/android/`
 
 Required mobile outputs:
 
-- iOS:
-  - `ios/iphoneos/libv3_ffi.dylib`
-  - `ios/iphoneos/v3_ffi.framework/`
-  - `ios/iphonesimulator/libv3_ffi.dylib`
-  - `ios/iphonesimulator/v3_ffi.framework/`
-  - `ios/v3_ffi.xcframework`
-  - `ios/v3_ffi.xcframework.zip`
-  - `ios/metadata.json`
+- Apple:
+  - `apple/iphoneos/libv3_ffi.dylib`
+  - `apple/iphoneos/v3_ffi.framework/`
+  - `apple/iphonesimulator/libv3_ffi.dylib`
+  - `apple/iphonesimulator/v3_ffi.framework/`
+  - `apple/macos/libv3_ffi.dylib`
+  - `apple/macos/v3_ffi.framework/`
+  - `apple/v3_ffi.xcframework`
+  - `apple/v3_ffi.xcframework.zip`
+  - `apple/metadata.json`
   - published release asset:
     - `v3_ffi.xcframework.zip`
   - published release metadata asset:
-    - `todero-native-mobile-ios-metadata-<version>.json`
+    - `todero-native-mobile-apple-metadata-<version>.json`
 - Android:
   - `android/jniLibs/arm64-v8a/libv3_ffi.so`
   - `android/jniLibs/x86_64/libv3_ffi.so`
