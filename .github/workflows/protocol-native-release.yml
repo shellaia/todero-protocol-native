@@ -227,6 +227,8 @@ jobs:
     needs: build_native
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Resolve release metadata
         id: meta
         shell: bash
