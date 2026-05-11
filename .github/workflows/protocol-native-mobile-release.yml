@@ -193,12 +193,28 @@ jobs:
           fi
 
           mkdir -p "dist/mobile-release/android"
-          cp -f "${ios_zip}" "dist/mobile-release/v3_ffi.xcframework.zip"
-          cp -f "${android_zip}" "dist/mobile-release/android/todero-native-mobile-android-${VERSION}.zip"
-          cp -f "${android_symbols_zip}" "dist/mobile-release/android/todero-native-mobile-android-symbols-${VERSION}.zip"
-          cp -f "${android_meta}" "dist/mobile-release/android/metadata.json"
-          cp -f "${ios_meta}" "dist/mobile-release/todero-native-mobile-apple-metadata-${VERSION}.json"
-          cp "dist/mobile-release/android/metadata.json" "dist/mobile-release/todero-native-mobile-android-metadata-${VERSION}.json"
+          copy_if_needed() {
+            local src="$1"
+            local dst="$2"
+            if python3 - "$src" "$dst" <<'PY'
+import os
+import sys
+src = os.path.realpath(sys.argv[1])
+dst = os.path.realpath(sys.argv[2])
+raise SystemExit(0 if src == dst else 1)
+PY
+            then
+              return 0
+            fi
+            cp -f "${src}" "${dst}"
+          }
+
+          copy_if_needed "${ios_zip}" "dist/mobile-release/v3_ffi.xcframework.zip"
+          copy_if_needed "${android_zip}" "dist/mobile-release/android/todero-native-mobile-android-${VERSION}.zip"
+          copy_if_needed "${android_symbols_zip}" "dist/mobile-release/android/todero-native-mobile-android-symbols-${VERSION}.zip"
+          copy_if_needed "${android_meta}" "dist/mobile-release/android/metadata.json"
+          copy_if_needed "${ios_meta}" "dist/mobile-release/todero-native-mobile-apple-metadata-${VERSION}.json"
+          copy_if_needed "dist/mobile-release/android/metadata.json" "dist/mobile-release/todero-native-mobile-android-metadata-${VERSION}.json"
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
         with:
