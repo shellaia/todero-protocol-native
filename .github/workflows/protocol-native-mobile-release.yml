@@ -175,7 +175,7 @@ jobs:
           find dist/mobile-release -maxdepth 5 -type f | sort || true
 
           ios_zip="$(find dist/mobile-release -name "v3_ffi.xcframework.zip" -print -quit || true)"
-          ios_meta="$(find dist/mobile-release -path "*/apple/metadata.json" -print -quit || true)"
+          ios_meta="$(find dist/mobile-release -name "metadata.json" ! -path "*/android/*" -print -quit || true)"
           android_zip="$(find dist/mobile-release -name "todero-native-mobile-android-${VERSION}.zip" -print -quit || true)"
           android_symbols_zip="$(find dist/mobile-release -name "todero-native-mobile-android-symbols-${VERSION}.zip" -print -quit || true)"
           android_meta="$(find dist/mobile-release -path "*/android/metadata.json" -print -quit || true)"
