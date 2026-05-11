@@ -196,13 +196,7 @@ jobs:
           copy_if_needed() {
             local src="$1"
             local dst="$2"
-            if python3 - "$src" "$dst" <<'PY'
-import os
-import sys
-src = os.path.realpath(sys.argv[1])
-dst = os.path.realpath(sys.argv[2])
-raise SystemExit(0 if src == dst else 1)
-PY
+            if python3 -c 'import os, sys; raise SystemExit(0 if os.path.realpath(sys.argv[1]) == os.path.realpath(sys.argv[2]) else 1)' "$src" "$dst"
             then
               return 0
             fi
